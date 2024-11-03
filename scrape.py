@@ -1,5 +1,4 @@
 import requests
-import pdfkit
 import os
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
@@ -108,33 +107,36 @@ def filter_duplicate_urls(url_list):
 # Filter the URLs to remove duplicates
 urls = filter_duplicate_urls(urls)
 
-# Configure pdfkit to use wkhtmltopdf
-config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
-
-def download_as_pdf(url):
+def download_as_html(url):
     try:
         # Get a filename from the URL
         filename = urlparse(url).path.split('/')[-1]
         if not filename:
             filename = 'index'
             
-        # Add .pdf extension if not present
-        if not filename.endswith('.pdf'):
-            filename = f"{filename}.pdf"
+        # Add .html extension if not present
+        if not filename.endswith('.html'):
+            filename = f"{filename}.html"
             
         # Handle duplicate filenames by adding a number
-        base_filename = filename[:-4]  # Remove .pdf
-        pdf_path = f"data/{filename}"
+        base_filename = filename[:-5]  # Remove .html
+        html_path = f"data/{filename}"
         counter = 1
         
-        while os.path.exists(pdf_path):
-            filename = f"{base_filename}_{counter}.pdf"
-            pdf_path = f"data/{filename}"
+        while os.path.exists(html_path):
+            filename = f"{base_filename}_{counter}.html"
+            html_path = f"data/{filename}"
             counter += 1
         
-        # Convert webpage to PDF
-        pdfkit.from_url(url, pdf_path, configuration=config)
-        print(f"Successfully downloaded {url} to {pdf_path}")
+        # Fetch the webpage content
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an error for bad responses
+        
+        # Save the content as HTML
+        with open(html_path, 'w', encoding='utf-8') as file:
+            file.write(response.text)
+        
+        print(f"Successfully downloaded {url} to {html_path}")
         
     except Exception as e:
         print(f"Error downloading {url}: {str(e)}")
@@ -146,7 +148,7 @@ def download_urls():
     
     # Process URLs concurrently with max 5 workers
     with ThreadPoolExecutor(max_workers=5) as executor:
-        executor.map(download_as_pdf, urls)
+        executor.map(download_as_html, urls)
 
 if __name__ == "__main__":
     download_urls()
