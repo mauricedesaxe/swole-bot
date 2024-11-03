@@ -100,6 +100,8 @@ urls = [
     "https://www.liebertpub.com/doi/10.1089/andro.2022.0003"
 ]
 
+from collections import defaultdict
+
 # Function to filter duplicate URLs
 def filter_duplicate_urls(url_list):
     return list(set(url_list))
@@ -107,48 +109,63 @@ def filter_duplicate_urls(url_list):
 # Filter the URLs to remove duplicates
 urls = filter_duplicate_urls(urls)
 
-def download_as_html(url):
-    try:
-        # Get a filename from the URL
-        filename = urlparse(url).path.split('/')[-1]
-        if not filename:
-            filename = 'index'
-            
-        # Add .html extension if not present
-        if not filename.endswith('.html'):
-            filename = f"{filename}.html"
-            
-        # Handle duplicate filenames by adding a number
-        base_filename = filename[:-5]  # Remove .html
-        html_path = f"data/{filename}"
-        counter = 1
-        
-        while os.path.exists(html_path):
-            filename = f"{base_filename}_{counter}.html"
+def download_as_html(url, domain_failures):
+    failure_count = 0  # Track consecutive failures
+    max_failures = 3   # Maximum allowed failures for a domain
+    domain = urlparse(url).netloc  # Extract the domain from the URL
+
+    while failure_count < max_failures:
+        try:
+            # Get a filename from the URL
+            filename = urlparse(url).path.split('/')[-1]
+            if not filename:
+                filename = 'index'
+                
+            # Add .html extension if not present
+            if not filename.endswith('.html'):
+                filename = f"{filename}.html"
+                
+            # Handle duplicate filenames by adding a number
+            base_filename = filename[:-5]  # Remove .html
             html_path = f"data/{filename}"
-            counter += 1
-        
-        # Fetch the webpage content
-        response = requests.get(url)
-        response.raise_for_status()  # Raise an error for bad responses
-        
-        # Save the content as HTML
-        with open(html_path, 'w', encoding='utf-8') as file:
-            file.write(response.text)
-        
-        print(f"Successfully downloaded {url} to {html_path}")
-        
-    except Exception as e:
-        print(f"Error downloading {url}: {str(e)}")
+            counter = 1
+            
+            while os.path.exists(html_path):
+                filename = f"{base_filename}_{counter}.html"
+                html_path = f"data/{filename}"
+                counter += 1
+            
+            # Fetch the webpage content
+            response = requests.get(url)
+            response.raise_for_status()  # Raise an error for bad responses
+            
+            # Save the content as HTML
+            with open(html_path, 'w', encoding='utf-8') as file:
+                file.write(response.text)
+            
+            print(f"Successfully downloaded {url} to {html_path}")
+            return  # Exit the function on success
+
+        except Exception as e:
+            failure_count += 1
+            print(f"Error downloading {url}: {str(e)}. Attempt {failure_count} of {max_failures}.")
+            if failure_count >= max_failures:
+                print(f"Skipping domain {domain} after {max_failures} failed attempts.")
+                domain_failures.add(domain)  # Mark the domain as failed
+                return
 
 def download_urls():
     # Create data directory if it doesn't exist
     if not os.path.exists("data"):
         os.makedirs("data")
     
-    # Process URLs concurrently with max 5 workers
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        executor.map(download_as_html, urls)
+    domain_failures = set()  # Track failed domains
+    for url in urls:
+        domain = urlparse(url).netloc
+        if domain in domain_failures:
+            print(f"Skipping {url} as its domain {domain} has failed previously.")
+            continue
+        download_as_html(url, domain_failures)
 
 if __name__ == "__main__":
     download_urls()
