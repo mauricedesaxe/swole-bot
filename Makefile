@@ -13,10 +13,6 @@ help:
 scrape:
 	python main.py scrape
 
-# Query the data
-query:
-	@if [ -z "$(q)" ]; then \
-		echo "Please provide a question using q='Your question'"; \
-		exit 1; \
-	fi
-	python main.py query "$(q)"
+# Chat with the data
+chat:
+	python main.py chat
