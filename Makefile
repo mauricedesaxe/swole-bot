@@ -16,3 +16,9 @@ scrape:
 # Chat with the data
 chat:
 	python main.py chat
+
+clean-data:
+	rm -rf ./data/*
+
+clean-storage:
+	rm -rf ./storage/*
