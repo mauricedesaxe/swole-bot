@@ -1,6 +1,7 @@
 import requests
 import os
 from urllib.parse import urlparse
+import time
 
 # List of URLs to scrape
 urls = list(set([
@@ -100,6 +101,39 @@ urls = list(set([
 ]))
 
 def download_as_html(url, domain_failures):
+    # Common headers to mimic a browser
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
+    
+    # Special headers for specific domains
+    domain_specific_headers = {
+        'liebertpub.com': {
+            'Referer': 'https://www.liebertpub.com',
+        },
+        'webmd.com': {
+            'Referer': 'https://www.webmd.com',
+        },
+        'journals.lww.com': {
+            'Referer': 'https://journals.lww.com',
+        },
+        'ncbi.nlm.nih.gov': {
+            'Referer': 'https://www.ncbi.nlm.nih.gov',
+        }
+    }
+    
+    domain = urlparse(url).netloc
+    # Add domain-specific headers if they exist
+    if any(d in domain for d in domain_specific_headers.keys()):
+        for d, h in domain_specific_headers.items():
+            if d in domain:
+                headers.update(h)
+                break
+
     for attempt in range(3):
         try:
             filename = urlparse(url).path.split('/')[-1] or 'index'
@@ -111,7 +145,9 @@ def download_as_html(url, domain_failures):
                 html_path = f"data/{filename[:-5]}_{counter}.html"
                 counter += 1
             
-            response = requests.get(url)
+            # Add session handling and proper headers
+            session = requests.Session()
+            response = session.get(url, headers=headers, timeout=30)
             response.raise_for_status()
             
             with open(html_path, 'w', encoding='utf-8') as file:
@@ -124,6 +160,8 @@ def download_as_html(url, domain_failures):
             print(f"Error downloading {url}: {e}. Attempt {attempt + 1} of 3.")
             if attempt == 2:
                 domain_failures.add(urlparse(url).netloc)
+            # Add a delay between retries
+            time.sleep(2 * (attempt + 1))
 
 def download_urls():
     os.makedirs("data", exist_ok=True)
