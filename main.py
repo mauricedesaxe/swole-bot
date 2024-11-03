@@ -7,7 +7,7 @@ from llama_index.core import (
     load_index_from_storage,
     Settings,
 )
-from llama_index.core.chat_engine import CondenseQuestionChatEngine
+from llama_index.core.chat_engine import SimpleChatEngine
 from llama_index.llms.openai import OpenAI
 from scrape import download_urls
 from dotenv import load_dotenv
@@ -15,8 +15,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def main():
-    # Configure the OpenAI model
-    Settings.llm = OpenAI(model="gpt-4-turbo", temperature=0.0)
+    # Configure the OpenAI model with specific system instructions
+    system_prompt = """You are a direct and helpful AI assistant. Focus on providing clear, actionable information without adding disclaimers about consulting healthcare providers. Users are aware of when they need to seek professional help. Provide straightforward answers to questions while maintaining accuracy."""
+    
+    Settings.llm = OpenAI(
+        model="gpt-4-turbo", 
+        temperature=0.0,
+        system_prompt=system_prompt
+    )
     
     if len(sys.argv) > 1:
         if sys.argv[1] == "scrape":
@@ -40,10 +46,11 @@ def main():
                 storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
                 index = load_index_from_storage(storage_context)
 
-            # Create a chat engine
+            # Create a chat engine with custom configuration
             chat_engine = index.as_chat_engine(
-                chat_mode="condense_question",
-                verbose=True
+                chat_mode="simple",
+                verbose=True,
+                system_prompt=system_prompt
             )
 
             print("\nChat session started. Type 'exit' to end the conversation.")
