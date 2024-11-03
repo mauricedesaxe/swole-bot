@@ -40,6 +40,13 @@ urls = [
     "https://journals.lww.com/tnpj/citation/2004/12000/erectile_dysfunction_in_primary_care.6.aspx"
 ]
 
+# Function to filter duplicate URLs
+def filter_duplicate_urls(url_list):
+    return list(set(url_list))
+
+# Filter the URLs to remove duplicates
+urls = filter_duplicate_urls(urls)
+
 # Configure pdfkit to use wkhtmltopdf
 config = pdfkit.configuration(wkhtmltopdf='/usr/local/bin/wkhtmltopdf')
 
