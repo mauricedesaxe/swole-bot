@@ -5,13 +5,18 @@ from llama_index.core import (
     SimpleDirectoryReader,
     StorageContext,
     load_index_from_storage,
+    Settings,
 )
+from llama_index.llms.openai import OpenAI
 from scrape import download_urls
 from dotenv import load_dotenv
 
 load_dotenv()
 
 def main():
+    # Configure the OpenAI model to use the latest most advanced model
+    Settings.llm = OpenAI(model="gpt-4-turbo", temperature=0.0)
+    
     if len(sys.argv) > 1:
         if sys.argv[1] == "scrape":
             # Run the scraping function directly
