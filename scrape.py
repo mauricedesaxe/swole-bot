@@ -2,6 +2,10 @@ import requests
 import os
 from urllib.parse import urlparse
 import time
+from bs4 import BeautifulSoup
+import openai
+from urllib.parse import quote
+import re
 
 # List of URLs to scrape
 urls = list(set([
@@ -100,6 +104,51 @@ urls = list(set([
     "https://www.liebertpub.com/doi/10.1089/andro.2022.0003"
 ]))
 
+def get_article_content(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Try to get the main content by looking for common article elements
+    article_text = ""
+    
+    # Get title
+    title = soup.find('title')
+    if title:
+        article_text += title.text.strip() + "\n\n"
+    
+    # Get meta description
+    meta_desc = soup.find('meta', {'name': 'description'})
+    if meta_desc and meta_desc.get('content'):
+        article_text += meta_desc['content'].strip() + "\n\n"
+    
+    # First few paragraphs
+    paragraphs = soup.find_all('p', limit=3)
+    for p in paragraphs:
+        article_text += p.text.strip() + "\n"
+    
+    return article_text[:1000]  # Limit to first 1000 chars to save tokens
+
+def generate_title(content, url):
+    try:
+        client = openai.OpenAI()
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that creates detailed and accurate filenames for medical articles. Ensure the titles are descriptive, relevant to the content, and use only alphanumeric characters, hyphens, and underscores. Keep titles under 100 characters."},
+                {"role": "user", "content": f"Create a descriptive filename for this article based on the content provided. URL: {url}\n\nContent excerpt:\n{content}"}
+            ],
+            max_tokens=100,  # Increased token limit for more descriptive titles
+            temperature=0.5  # Lower temperature for more focused and accurate responses
+        )
+        
+        title = response.choices[0].message.content.strip()
+        # Clean the title to be filesystem-friendly
+        title = re.sub(r'[^\w\-]', '_', title)
+        title = re.sub(r'_+', '_', title)  # Replace multiple underscores with single
+        return title
+    except Exception as e:
+        print(f"Error generating title: {e}")
+        return None
+
 def download_as_html(url, domain_failures):
     # Common headers to mimic a browser
     headers = {
@@ -136,19 +185,27 @@ def download_as_html(url, domain_failures):
 
     for attempt in range(3):
         try:
-            filename = urlparse(url).path.split('/')[-1] or 'index'
-            filename = f"{filename}.html" if not filename.endswith('.html') else filename
+            session = requests.Session()
+            response = session.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # Extract content and generate title
+            content = get_article_content(response.text)
+            generated_title = generate_title(content, url)
+            
+            if generated_title:
+                filename = f"{generated_title}.html"
+            else:
+                # Fallback to original filename generation
+                filename = urlparse(url).path.split('/')[-1] or 'index'
+                filename = f"{filename}.html" if not filename.endswith('.html') else filename
+            
             html_path = f"data/{filename}"
             counter = 1
             
             while os.path.exists(html_path):
                 html_path = f"data/{filename[:-5]}_{counter}.html"
                 counter += 1
-            
-            # Add session handling and proper headers
-            session = requests.Session()
-            response = session.get(url, headers=headers, timeout=30)
-            response.raise_for_status()
             
             with open(html_path, 'w', encoding='utf-8') as file:
                 file.write(response.text)
@@ -166,6 +223,11 @@ def download_as_html(url, domain_failures):
 def download_urls():
     os.makedirs("data", exist_ok=True)
     domain_failures = set()
+    
+    # Initialize OpenAI API key
+    openai.api_key = os.getenv('OPENAI_API_KEY')
+    if not openai.api_key:
+        raise ValueError("OPENAI_API_KEY environment variable is not set")
     
     for url in urls:
         if urlparse(url).netloc in domain_failures:
