@@ -3,6 +3,8 @@ import os
 from urllib.parse import urlparse
 import time
 from studies import urls
+from openai import OpenAI
+
 
 def download_as_markdown(url, domain_failures):
     headers = {
@@ -17,6 +19,26 @@ def download_as_markdown(url, domain_failures):
             # Extract title from markdown content
             markdown_content = response.text
             title = None
+
+            # Take only the first 1000 characters for the relevance check
+            content_preview = markdown_content[:1000]
+            
+            # Call OpenAI to check if the content is related to testosterone
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "user", "content": f"Does the following excerpt from an academic paper seem related to testosterone in any way? Answer with 'yes' or 'no'. Excerpt: {content_preview}"}
+                ],
+                max_tokens=5
+            )
+
+            # Extract the response
+            is_related = response.choices[0].message.content.strip().lower()
+
+            if "yes" not in is_related:
+                print(f"Content not related to testosterone. Stopping download for {url}.")
+                return
             
             # Try to find title in markdown content
             for line in markdown_content.split('\n'):
