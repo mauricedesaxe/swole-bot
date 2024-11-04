@@ -14,6 +14,11 @@ from dotenv import load_dotenv
 from llama_index.core.node_parser import SimpleNodeParser
 from llama_index.vector_stores.chroma.base import ChromaVectorStore
 import chromadb
+from datetime import datetime
+from typing import List
+from llama_index.core.schema import Document
+import concurrent.futures
+from tqdm import tqdm
 
 load_dotenv()
 
@@ -24,7 +29,14 @@ parser = SimpleNodeParser.from_defaults(
 )
 
 # Initialize Chroma
-chroma_client = chromadb.PersistentClient(path="./chroma_db")
+chroma_client = chromadb.PersistentClient(
+    path="./chroma_db",
+    settings=chromadb.Settings(
+        anonymized_telemetry=False,
+        allow_reset=True,
+        is_persistent=True
+    )
+)
 try:
     chroma_collection = chroma_client.get_collection("my_collection")
 except:
@@ -38,74 +50,84 @@ storage_context = StorageContext.from_defaults(
     vector_store=vector_store
 )
 
-def create_index_in_batches(directory, batch_size=10):
+def create_index_in_batches(directory, batch_size=20):
+    def process_batch(batch_files):
+        try:
+            reader = SimpleDirectoryReader(input_files=batch_files, recursive=False)
+            documents = reader.load_data()
+            return preprocess_documents(documents)
+        except Exception as e:
+            print(f"Error processing batch: {str(e)}")
+            return []
+
     try:
-        # Get only existing Markdown files with full path check
-        all_files = []
-        for file in os.listdir(directory):
-            full_path = os.path.join(directory, file)
-            if file.endswith('.md') and os.path.exists(full_path):
-                all_files.append(full_path)
-                
+        # Get all markdown files
+        all_files = [
+            os.path.join(directory, f) for f in os.listdir(directory)
+            if f.endswith('.md') and os.path.exists(os.path.join(directory, f))
+        ]
+        
         if not all_files:
             raise ValueError(f"No Markdown files found in {directory}")
-            
-        index = None
-        successful_batches = False
+        
+        # Process files in parallel batches
+        total_batches = (len(all_files) + batch_size - 1) // batch_size
         all_documents = []
         
-        total_batches = (len(all_files) + batch_size - 1) // batch_size
-        print(f"Processing {len(all_files)} files in {total_batches} batches...")
-        
-        for i in range(0, len(all_files), batch_size):
-            batch_files = all_files[i:i + batch_size]
-            try:
-                reader = SimpleDirectoryReader(
-                    input_files=batch_files,
-                    recursive=False,
-                )
-                documents = reader.load_data()
-                all_documents.extend(documents)
+        with tqdm(total=len(all_files), desc="Processing documents") as pbar:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = []
+                for i in range(0, len(all_files), batch_size):
+                    batch_files = all_files[i:i + batch_size]
+                    futures.append(executor.submit(process_batch, batch_files))
                 
-                successful_batches = True
-                print(f"Successfully processed batch {i//batch_size + 1}/{total_batches}")
-                
-            except Exception as e:
-                print(f"Error processing batch {i//batch_size + 1}: {str(e)}")
-                continue
+                for future in concurrent.futures.as_completed(futures):
+                    batch_documents = future.result()
+                    all_documents.extend(batch_documents)
+                    pbar.update(len(batch_documents))
         
-        if not successful_batches:
-            raise ValueError("No batches were successfully processed")
-        
-        print("Creating index from processed documents...")
+        # Create index with optimized settings
         if all_documents:
-            # Show progress during indexing
-            total_docs = len(all_documents)
-            print(f"Starting indexing of {total_docs} documents...")
+            index = VectorStoreIndex.from_documents(
+                documents=all_documents,
+                storage_context=storage_context,
+                show_progress=True,
+                use_async=True  # Enable async processing
+            )
             
-            # Create index in smaller chunks to show progress
-            chunk_size = 20
-            for i in range(0, total_docs, chunk_size):
-                chunk = all_documents[i:i + chunk_size]
-                if index is None:
-                    index = VectorStoreIndex.from_documents(
-                        chunk,
-                        storage_context=storage_context,
-                        show_progress=True  # Enable progress bar
-                    )
-                else:
-                    index.insert_nodes(chunk)
-                print(f"Indexed documents {i + 1} to {min(i + chunk_size, total_docs)} of {total_docs}")
-            
-            print("Saving index to storage...")
+            # Save index
             index.storage_context.persist(persist_dir="./storage")
-            print("Index saved successfully!")
+            return index
             
-        return index
-        
     except Exception as e:
         print(f"Error creating index: {str(e)}")
         return None
+
+def preprocess_documents(documents):
+    def clean_text(text: str) -> str:
+        import re
+        # Remove excessive whitespace
+        text = re.sub(r'\s+', ' ', text)
+        # Remove special characters but keep punctuation
+        text = re.sub(r'[^\w\s.,!?-]', '', text)
+        return text.strip()
+    
+    processed_docs: List[Document] = []
+    for doc in documents:
+        # Clean the text content
+        cleaned_text = clean_text(doc.text)
+        # Create new document with cleaned text
+        processed_doc = Document(
+            text=cleaned_text,
+            metadata={
+                **doc.metadata,
+                'char_count': len(cleaned_text),
+                'processed_date': datetime.now().isoformat()
+            }
+        )
+        processed_docs.append(processed_doc)
+    
+    return processed_docs
 
 def main():
     # Configure the OpenAI model with specific system instructions
@@ -168,6 +190,40 @@ def main():
         else:
             print("Invalid command. Use 'make help' to see available commands.")
             sys.exit(1)
+
+def get_index_stats():
+    try:
+        collection = chroma_client.get_collection("my_collection")
+        count = collection.count()
+        return {
+            "total_documents": count,
+            "collection_name": collection.name,
+            "metadata": collection.metadata
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def cleanup_old_embeddings(days_old=30):
+    from datetime import datetime, timedelta
+    cutoff_date = datetime.now() - timedelta(days=days_old)
+    
+    try:
+        collection = chroma_client.get_collection("my_collection")
+        # Get all documents with their metadata
+        docs = collection.get()
+        
+        # Find IDs of old documents
+        old_ids = [
+            id for id, metadata in zip(docs['ids'], docs['metadatas'])
+            if metadata.get('processed_date') and 
+            datetime.fromisoformat(metadata['processed_date']) < cutoff_date
+        ]
+        
+        if old_ids:
+            collection.delete(ids=old_ids)
+            print(f"Removed {len(old_ids)} old documents from the index")
+    except Exception as e:
+        print(f"Error cleaning up old embeddings: {str(e)}")
 
 if __name__ == "__main__":
     main()
