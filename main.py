@@ -19,13 +19,40 @@ from typing import List
 from llama_index.core.schema import Document
 import concurrent.futures
 from tqdm import tqdm
+import json
 
 load_dotenv()
 
+# Load configuration from config.json
+with open('config.json') as config_file:
+    config = json.load(config_file)
+
+# Define constants for configuration parameters
+CHUNK_SIZE = config['chunk_size']
+CHUNK_OVERLAP = config['chunk_overlap']
+BATCH_SIZE = config['batch_size']
+SYSTEM_PROMPT = config['system_prompt']
+MODEL = config['model']
+TEMPERATURE = config['temperature']
+
+# Check for missing configuration parameters
+required_params = {
+    "chunk_size": CHUNK_SIZE,
+    "chunk_overlap": CHUNK_OVERLAP,
+    "batch_size": BATCH_SIZE,
+    "system_prompt": SYSTEM_PROMPT,
+    "model": MODEL,
+    "temperature": TEMPERATURE
+}
+
+for param, value in required_params.items():
+    if value is None:
+        raise ValueError(f"Missing configuration parameter: {param}")
+
 # Configure chunking parameters
 parser = SimpleNodeParser.from_defaults(
-    chunk_size=512,
-    chunk_overlap=50
+    chunk_size=CHUNK_SIZE,
+    chunk_overlap=CHUNK_OVERLAP
 )
 
 # Initialize Chroma
@@ -50,7 +77,7 @@ storage_context = StorageContext.from_defaults(
     vector_store=vector_store
 )
 
-def create_index_in_batches(directory, batch_size=20):
+def create_index_in_batches(directory, batch_size=BATCH_SIZE):
     def process_batch(batch_files):
         try:
             reader = SimpleDirectoryReader(input_files=batch_files, recursive=False)
@@ -130,13 +157,10 @@ def preprocess_documents(documents):
     return processed_docs
 
 def main():
-    # Configure the OpenAI model with specific system instructions
-    system_prompt = """You are a direct and helpful AI assistant. Focus on providing clear, actionable information without adding disclaimers about consulting healthcare providers. Users are aware of when they need to seek professional help. Provide straightforward answers to questions while maintaining accuracy."""
-    
     Settings.llm = OpenAI(
-        model="gpt-4-turbo", 
-        temperature=0.0,
-        system_prompt=system_prompt
+        model=MODEL, 
+        temperature=TEMPERATURE,
+        system_prompt=SYSTEM_PROMPT
     )
     
     if len(sys.argv) > 1:
@@ -153,7 +177,7 @@ def main():
             try:
                 if not os.path.exists(PERSIST_DIR):
                     print("Creating new index. This may take a few minutes...")
-                    index = create_index_in_batches("data", batch_size=10)
+                    index = create_index_in_batches("data")
                     if index is None:
                         raise ValueError("Failed to create index")
                     print("Index creation completed!")
@@ -170,7 +194,7 @@ def main():
                 chat_engine = index.as_chat_engine(
                     chat_mode="simple",
                     verbose=True,
-                    system_prompt=system_prompt
+                    system_prompt=SYSTEM_PROMPT
                 )
                 
                 print("\nChat session started. Type 'exit' to end the conversation.")
