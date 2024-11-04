@@ -85,7 +85,7 @@ def chat_session(storage_context, config):
         return
     
     # Get the Chroma collection from the vector store
-    chroma_collection = storage_context.vector_store.chroma_collection
+    chroma_collection = storage_context.vector_store._collection
     
     # Check if collection has any documents
     collection_count = chroma_collection.count()
