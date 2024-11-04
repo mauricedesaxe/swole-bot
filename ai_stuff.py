@@ -84,41 +84,21 @@ def chat_session(storage_context, config):
         print("No data found. Please run 'make scrape' first.")
         return
 
-    PERSIST_DIR = "./storage"
-    required_files = [
-        os.path.join(PERSIST_DIR, "docstore.json"),
-        os.path.join(PERSIST_DIR, "index_store.json"),
-        os.path.join(PERSIST_DIR, "vector_store.json")
-    ]
-    
-    # Check if all required files exist
-    files_exist = all(os.path.exists(f) for f in required_files)
-    
-    if not files_exist:
+    # Check if ChromaDB has existing data
+    if not os.path.exists("./chroma_db") or not os.listdir("./chroma_db"):
         print("Creating new index...")
-        # Ensure the storage directory exists
-        os.makedirs(PERSIST_DIR, exist_ok=True)
-        
-        # Clean up any partial storage files
-        for file in required_files:
-            if os.path.exists(file):
-                os.remove(file)
-        
         documents = process_documents("data", config['batch_size'])
         index = VectorStoreIndex.from_documents(
             documents, 
             storage_context=storage_context, 
             show_progress=True
         )
-        index.storage_context.persist(persist_dir=PERSIST_DIR)
     else:
         print("Loading existing index...")
         try:
-            storage_context = StorageContext.from_defaults(
-                persist_dir=PERSIST_DIR,
-                vector_store=storage_context.vector_store
+            index = VectorStoreIndex.from_vector_store(
+                storage_context.vector_store
             )
-            index = load_index_from_storage(storage_context)
         except Exception as e:
             print(f"Error loading existing index: {str(e)}")
             print("Creating new index instead...")
@@ -128,7 +108,6 @@ def chat_session(storage_context, config):
                 storage_context=storage_context, 
                 show_progress=True
             )
-            index.storage_context.persist(persist_dir=PERSIST_DIR)
 
     chat_engine = index.as_chat_engine(
         chat_mode="simple", 
