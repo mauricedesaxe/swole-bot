@@ -4,3 +4,7 @@ data/*
 *.pdf
 __pycache__
 storage/*
+chroma_db/*
+*.sqlite
+*.sqlite3
+*.db
