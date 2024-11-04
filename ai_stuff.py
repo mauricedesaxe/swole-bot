@@ -83,9 +83,14 @@ def chat_session(storage_context, config):
     if not os.path.exists("data") or not os.listdir("data"):
         print("No data found. Please run 'make scrape' first.")
         return
-
-    # Check if ChromaDB has existing data
-    if not os.path.exists("./chroma_db") or not os.listdir("./chroma_db"):
+    
+    # Get the Chroma collection from the vector store
+    chroma_collection = storage_context.vector_store.chroma_collection
+    
+    # Check if collection has any documents
+    collection_count = chroma_collection.count()
+    
+    if collection_count == 0:
         print("Creating new index...")
         documents = process_documents("data", config['batch_size'])
         index = VectorStoreIndex.from_documents(
