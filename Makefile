@@ -25,10 +25,5 @@ clean-data:
 clean-storage:
 	rm -rf ./storage/*
 
-# Get index statistics
-stats:
-	python -c "from main import get_index_stats; print(get_index_stats())"
-
-# Cleanup old embeddings
-cleanup:
-	python -c "from main import cleanup_old_embeddings; cleanup_old_embeddings()"
+clean-chroma:
+	rm -rf ./chroma_db/*
