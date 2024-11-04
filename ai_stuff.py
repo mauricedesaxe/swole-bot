@@ -27,8 +27,9 @@ def setup():
     
     # Validate config
     required_params = ["chunk_size", "chunk_overlap", "batch_size", "system_prompt", "model", "temperature"]
-    if not all(config.get(param) for param in required_params):
-        raise ValueError(f"Missing configuration parameters")  # Raise error if any required parameter is missing
+    missing_params = [param for param in required_params if param not in config]
+    if missing_params:
+        raise ValueError(f"Missing configuration parameters: {', '.join(missing_params)}")
     
     # Initialize Chroma and LLM
     client = chromadb.PersistentClient(path="./chroma_db")  # Create a persistent Chroma client
@@ -80,30 +81,67 @@ def chat_session(storage_context, config):
         config (dict): The configuration settings for the chat session.
     """
     if not os.path.exists("data") or not os.listdir("data"):
-        print("No data found. Please run 'make scrape' first.")  # Prompt user to scrape data if none exists
+        print("No data found. Please run 'make scrape' first.")
         return
 
-    PERSIST_DIR = "./storage"  # Directory to persist the index
-    if not os.path.exists(PERSIST_DIR):
-        print("Creating new index...")  # Inform user that a new index is being created
-        documents = process_documents("data", config['batch_size'])  # Process documents from the data directory
-        index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)  # Create a new index
-        index.storage_context.persist(persist_dir=PERSIST_DIR)  # Persist the index to the storage directory
+    PERSIST_DIR = "./storage"
+    required_files = [
+        os.path.join(PERSIST_DIR, "docstore.json"),
+        os.path.join(PERSIST_DIR, "index_store.json"),
+        os.path.join(PERSIST_DIR, "vector_store.json")
+    ]
+    
+    # Check if all required files exist
+    files_exist = all(os.path.exists(f) for f in required_files)
+    
+    if not files_exist:
+        print("Creating new index...")
+        # Ensure the storage directory exists
+        os.makedirs(PERSIST_DIR, exist_ok=True)
+        
+        # Clean up any partial storage files
+        for file in required_files:
+            if os.path.exists(file):
+                os.remove(file)
+        
+        documents = process_documents("data", config['batch_size'])
+        index = VectorStoreIndex.from_documents(
+            documents, 
+            storage_context=storage_context, 
+            show_progress=True
+        )
+        index.storage_context.persist(persist_dir=PERSIST_DIR)
     else:
-        print("Loading existing index...")  # Inform user that an existing index is being loaded
-        index = load_index_from_storage(StorageContext.from_defaults(
-            persist_dir=PERSIST_DIR, 
-            vector_store=storage_context.vector_store
-        ))  # Load the existing index
+        print("Loading existing index...")
+        try:
+            storage_context = StorageContext.from_defaults(
+                persist_dir=PERSIST_DIR,
+                vector_store=storage_context.vector_store
+            )
+            index = load_index_from_storage(storage_context)
+        except Exception as e:
+            print(f"Error loading existing index: {str(e)}")
+            print("Creating new index instead...")
+            documents = process_documents("data", config['batch_size'])
+            index = VectorStoreIndex.from_documents(
+                documents, 
+                storage_context=storage_context, 
+                show_progress=True
+            )
+            index.storage_context.persist(persist_dir=PERSIST_DIR)
 
-    chat_engine = index.as_chat_engine(chat_mode="simple", verbose=True, system_prompt=config['system_prompt'])  # Initialize the chat engine
-    print("\nChat session started. Type 'exit' to end.")  # Inform user that the chat session has started
+    chat_engine = index.as_chat_engine(
+        chat_mode="simple", 
+        verbose=True, 
+        system_prompt=config['system_prompt']
+    )
+    print("\nChat session started. Type 'exit' to end.")
 
     while True:
-        user_input = input("\nYou: ").strip()  # Get user input
+        user_input = input("\nYou: ").strip()
         if user_input.lower() in ['exit', 'quit']:
-            break  # Exit the chat session if the user types 'exit' or 'quit'
-        print("\nAssistant:", chat_engine.chat(user_input).response)  # Get and print the assistant's response
+            break
+        print("\nAssistant:", chat_engine.chat(user_input).response)
 
 if __name__ == "__main__":
     storage_context, config = setup()
