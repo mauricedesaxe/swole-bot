@@ -1,4 +1,4 @@
-{
+CONFIG = {
     "chunk_size": 512,
     "chunk_overlap": 50,
     "batch_size": 20,

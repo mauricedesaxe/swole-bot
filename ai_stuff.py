@@ -1,5 +1,4 @@
 import os
-import json
 from datetime import datetime
 import chromadb
 from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, StorageContext, load_index_from_storage, Settings
@@ -8,6 +7,7 @@ from llama_index.vector_stores.chroma.base import ChromaVectorStore
 from llama_index.core.schema import Document
 from dotenv import load_dotenv
 import re
+from config import CONFIG
 
 def setup():
     """
@@ -19,25 +19,16 @@ def setup():
 
     Returns:
         StorageContext: The storage context containing the vector store.
-        dict: The configuration settings loaded from the JSON file.
     """
     load_dotenv()  # Load environment variables from .env file
-    with open('config.json') as f:
-        config = json.load(f)  # Load configuration from JSON file
-    
-    # Validate config
-    required_params = ["chunk_size", "chunk_overlap", "batch_size", "system_prompt", "model", "temperature"]
-    missing_params = [param for param in required_params if param not in config]
-    if missing_params:
-        raise ValueError(f"Missing configuration parameters: {', '.join(missing_params)}")
     
     # Initialize Chroma and LLM
     client = chromadb.PersistentClient(path="./chroma_db")  # Create a persistent Chroma client
     collection = client.get_or_create_collection("my_collection")  # Get or create a collection in Chroma
     vector_store = ChromaVectorStore(chroma_collection=collection)  # Initialize the vector store with the Chroma collection
-    Settings.llm = OpenAI(model=config['model'], temperature=config['temperature'], system_prompt=config['system_prompt'])  # Set the LLM settings
+    Settings.llm = OpenAI(model=CONFIG['model'], temperature=CONFIG['temperature'], system_prompt=CONFIG['system_prompt'])  # Set the LLM settings
     
-    return StorageContext.from_defaults(vector_store=vector_store), config  # Return the storage context and config
+    return StorageContext.from_defaults(vector_store=vector_store)  # Return the storage context and config
 
 def process_documents(directory, batch_size):
     """
@@ -69,7 +60,7 @@ def process_documents(directory, batch_size):
     
     return cleaned_docs  # Return the list of cleaned documents
 
-def chat_session(storage_context, config):
+def chat_session(storage_context):
     """
     Starts a chat session with the user.
 
@@ -92,7 +83,7 @@ def chat_session(storage_context, config):
     
     if collection_count == 0:
         print("Creating new index...")
-        documents = process_documents("data", config['batch_size'])
+        documents = process_documents("data", CONFIG['batch_size'])
         index = VectorStoreIndex.from_documents(
             documents, 
             storage_context=storage_context, 
@@ -107,7 +98,7 @@ def chat_session(storage_context, config):
         except Exception as e:
             print(f"Error loading existing index: {str(e)}")
             print("Creating new index instead...")
-            documents = process_documents("data", config['batch_size'])
+            documents = process_documents("data", CONFIG['batch_size'])
             index = VectorStoreIndex.from_documents(
                 documents, 
                 storage_context=storage_context, 
@@ -117,7 +108,7 @@ def chat_session(storage_context, config):
     chat_engine = index.as_chat_engine(
         chat_mode="simple", 
         verbose=True, 
-        system_prompt=config['system_prompt']
+        system_prompt=CONFIG['system_prompt']
     )
     print("\nChat session started. Type 'exit' to end.")
 
@@ -129,4 +120,4 @@ def chat_session(storage_context, config):
 
 if __name__ == "__main__":
     storage_context, config = setup()
-    chat_session(storage_context, config)
+    chat_session(storage_context)
