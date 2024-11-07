@@ -7,7 +7,7 @@ from llama_index.vector_stores.chroma.base import ChromaVectorStore
 from llama_index.core.schema import Document
 from dotenv import load_dotenv
 import re
-from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import HierarchicalNodeParser
 from config import CONFIG
 
 def setup():
@@ -33,16 +33,22 @@ def setup():
 
 def process_documents(directory, batch_size):
     """
-    Processes documents from a specified directory in batches and chunks them semantically.
+    Processes documents using multi-level semantic chunking.
     """
     reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
     documents = reader.load_data()
     
-    # Initialize the sentence splitter with chunk size and overlap.
-    text_splitter = SentenceSplitter(
-        chunk_size=CONFIG['chunk_size'],
-        chunk_overlap=CONFIG['chunk_overlap'],
-        separator="\n\n"
+    # Create hierarchical chunking configuration
+    chunk_sizes = {
+        "text": CONFIG['chunk_size'],          # Base text chunks
+        "sentence": 100,                       # Sentence-level chunks
+        "paragraph": CONFIG['chunk_size'] * 2  # Paragraph-level chunks
+    }
+    
+    # Initialize hierarchical parser with multi-level chunking
+    node_parser = HierarchicalNodeParser.from_defaults(
+        chunk_sizes=[chunk_sizes["sentence"], chunk_sizes["text"], chunk_sizes["paragraph"]],
+        include_metadata=True
     )
     
     cleaned_docs = []
@@ -50,27 +56,29 @@ def process_documents(directory, batch_size):
         batch = documents[i:i + batch_size]
         
         for doc in batch:
-            # Clean the text
-            cleaned_text = ' '.join(re.sub(r'[^\w\s.,!?-]', '', doc.text).split())
+            # Preserve more semantic markers in text cleaning
+            cleaned_text = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"]', '', doc.text)
             
-            # Split the document into chunks
-            chunks = text_splitter.split_text(cleaned_text)
+            # Parse document into hierarchical nodes
+            nodes = node_parser.get_nodes_from_documents(
+                [Document(text=cleaned_text, metadata={"source": doc.metadata.get("file_path", "")})]
+            )
             
-            # Create Document objects for each chunk
-            for chunk_idx, chunk in enumerate(chunks):
-                cleaned_docs.append(
-                    Document(
-                        text=chunk,
-                        metadata={
-                            **doc.metadata,
-                            'char_count': len(chunk),
-                            'processed_date': datetime.now().isoformat(),
-                            'chunk_index': chunk_idx,
-                            'total_chunks': len(chunks),
-                            'original_doc_id': doc.doc_id
-                        }
-                    )
-                )
+            # Convert nodes while preserving hierarchical relationships
+            for node_idx, node in enumerate(nodes):
+                metadata = {
+                    **doc.metadata,
+                    **node.metadata,
+                    'char_count': len(node.text),
+                    'processed_date': datetime.now().isoformat(),
+                    'chunk_index': node_idx,
+                    'total_chunks': len(nodes),
+                    'original_doc_id': doc.doc_id,
+                    'level': node.metadata.get('level', 0),
+                    'section': node.metadata.get('section_name', None)
+                }
+                
+                cleaned_docs.append(Document(text=node.text, metadata=metadata))
     
     return cleaned_docs
 
@@ -120,9 +128,12 @@ def chat_session(storage_context):
             )
 
     chat_engine = index.as_chat_engine(
-        chat_mode="simple", 
-        verbose=True, 
-        system_prompt=CONFIG['system_prompt']
+        chat_mode="context",
+        verbose=True,
+        system_prompt=CONFIG['system_prompt'],
+        node_relationships=True,
+        similarity_top_k=5,  # Retrieve more related chunks
+        context_window=4096  # Allow for larger context window
     )
     print("\nChat session started. Type 'exit' to end.")
 
