@@ -7,6 +7,7 @@ from llama_index.vector_stores.chroma.base import ChromaVectorStore
 from llama_index.core.schema import Document
 from dotenv import load_dotenv
 import re
+from llama_index.core.node_parser import SentenceSplitter
 from config import CONFIG
 
 def setup():
@@ -32,33 +33,46 @@ def setup():
 
 def process_documents(directory, batch_size):
     """
-    Processes documents from a specified directory in batches.
-
-    This function reads documents from the given directory, cleans the text by removing
-    unwanted characters, and adds metadata such as character count and processing date.
-
-    Args:
-        directory (str): The path to the directory containing documents.
-        batch_size (int): The number of documents to process in a batch.
-
-    Returns:
-        list: A list of cleaned Document objects with added metadata.
+    Processes documents from a specified directory in batches and chunks them semantically.
     """
-    reader = SimpleDirectoryReader(input_dir=directory, recursive=False)  # Initialize the document reader
-    documents = reader.load_data()  # Load documents from the directory
+    reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
+    documents = reader.load_data()
     
-    # Clean and add metadata in batches
+    # Initialize the sentence splitter with chunk size and overlap.
+    text_splitter = SentenceSplitter(
+        chunk_size=CONFIG['chunk_size'],
+        chunk_overlap=CONFIG['chunk_overlap'],
+        separator="\n\n"
+    )
+    
     cleaned_docs = []
     for i in range(0, len(documents), batch_size):
-        batch = documents[i:i + batch_size]  # Get the current batch of documents
-        cleaned_docs.extend([
-            Document(
-                text=' '.join(re.sub(r'[^\w\s.,!?-]', '', doc.text).split()),  # Clean the text
-                metadata={**doc.metadata, 'char_count': len(doc.text), 'processed_date': datetime.now().isoformat()}  # Add metadata
-            ) for doc in batch
-        ])
+        batch = documents[i:i + batch_size]
+        
+        for doc in batch:
+            # Clean the text
+            cleaned_text = ' '.join(re.sub(r'[^\w\s.,!?-]', '', doc.text).split())
+            
+            # Split the document into chunks
+            chunks = text_splitter.split_text(cleaned_text)
+            
+            # Create Document objects for each chunk
+            for chunk_idx, chunk in enumerate(chunks):
+                cleaned_docs.append(
+                    Document(
+                        text=chunk,
+                        metadata={
+                            **doc.metadata,
+                            'char_count': len(chunk),
+                            'processed_date': datetime.now().isoformat(),
+                            'chunk_index': chunk_idx,
+                            'total_chunks': len(chunks),
+                            'original_doc_id': doc.doc_id
+                        }
+                    )
+                )
     
-    return cleaned_docs  # Return the list of cleaned documents
+    return cleaned_docs
 
 def chat_session(storage_context):
     """
