@@ -32,9 +32,20 @@ def setup():
     return StorageContext.from_defaults(vector_store=vector_store)
 
 def clean_text(text):
-    """Cleans the input text by removing special characters and normalizing whitespace."""
-    cleaned = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"\'$%]', ' ', text)
-    return ' '.join(re.sub(r'([.,!?])\1+', r'\1', cleaned).split())
+    """Preserves medical terminology, units, and measurements while cleaning text."""
+    # Preserve common medical/fitness units and measurements
+    text = re.sub(r'(\d+)(?:\s*)(mg|kg|lb|g|ml|ng|dl|pmol|nmol|iu|cc|mcg)', r'\1 \2', text)
+    
+    # Preserve common medical symbols
+    text = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"\'$%±<>°→←↔️∆/]', ' ', text)
+    
+    # Normalize whitespace while preserving sentence structure
+    text = ' '.join(text.split())
+    
+    # Standardize unit formatting
+    text = re.sub(r'(\d+)\s*(mg|kg|lb|g|ml|ng|dl|pmol|nmol|iu|cc|mcg)', r'\1\2', text)
+    
+    return text
 
 def extract_metadata(text):
     """Extracts metadata from the input text."""
