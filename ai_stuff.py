@@ -9,6 +9,9 @@ from dotenv import load_dotenv
 import re
 from llama_index.core.node_parser import HierarchicalNodeParser
 from config import CONFIG
+import concurrent.futures
+from tqdm import tqdm
+import multiprocessing
 
 def setup():
     """
@@ -31,54 +34,66 @@ def setup():
     
     return StorageContext.from_defaults(vector_store=vector_store)  # Return the storage context and config
 
+def process_document_batch(batch, node_parser):
+    """Process a single batch of documents"""
+    batch_docs = []
+    for doc in batch:
+        cleaned_text = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"]', '', doc.text)
+        batch_docs.append(Document(text=cleaned_text, metadata={"source": doc.metadata.get("file_path", "")}))
+    
+    nodes = node_parser.get_nodes_from_documents(batch_docs)
+    
+    cleaned_docs = []
+    for doc, node in zip(batch_docs, nodes):
+        metadata = {
+            **doc.metadata,
+            **node.metadata,
+            'char_count': len(node.text),
+            'processed_date': datetime.now().isoformat(),
+            'chunk_index': len(cleaned_docs),
+            'total_chunks': len(nodes),
+            'level': node.metadata.get('level', 0),
+            'section': node.metadata.get('section_name', None)
+        }
+        cleaned_docs.append(Document(text=node.text, metadata=metadata))
+    
+    return cleaned_docs
+
 def process_documents(directory, batch_size):
     """
-    Processes documents using multi-level semantic chunking.
+    Processes documents using multi-level semantic chunking with parallel processing.
     """
     reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
     documents = reader.load_data()
     
     # Create hierarchical chunking configuration
     chunk_sizes = {
-        "text": CONFIG['chunk_size'],          # Base text chunks
-        "sentence": 100,                       # Sentence-level chunks
-        "paragraph": CONFIG['chunk_size'] * 2  # Paragraph-level chunks
+        "text": CONFIG['chunk_size'],
+        "paragraph": CONFIG['chunk_size'] * 2
     }
     
     # Initialize hierarchical parser with multi-level chunking
     node_parser = HierarchicalNodeParser.from_defaults(
-        chunk_sizes=[chunk_sizes["sentence"], chunk_sizes["text"], chunk_sizes["paragraph"]],
+        chunk_sizes=[chunk_sizes["text"], chunk_sizes["paragraph"]],
         include_metadata=True
     )
     
+    # Create chunks of documents for parallel processing
+    batches = [documents[i:i + batch_size] for i in range(0, len(documents), batch_size)]
+    
     cleaned_docs = []
-    for i in range(0, len(documents), batch_size):
-        batch = documents[i:i + batch_size]
+    # Use ThreadPoolExecutor for I/O-bound operations
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(batches))) as executor:
+        # Create a partial function with node_parser
+        process_batch = lambda batch: process_document_batch(batch, node_parser)
         
-        for doc in batch:
-            # Preserve more semantic markers in text cleaning
-            cleaned_text = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"]', '', doc.text)
-            
-            # Parse document into hierarchical nodes
-            nodes = node_parser.get_nodes_from_documents(
-                [Document(text=cleaned_text, metadata={"source": doc.metadata.get("file_path", "")})]
-            )
-            
-            # Convert nodes while preserving hierarchical relationships
-            for node_idx, node in enumerate(nodes):
-                metadata = {
-                    **doc.metadata,
-                    **node.metadata,
-                    'char_count': len(node.text),
-                    'processed_date': datetime.now().isoformat(),
-                    'chunk_index': node_idx,
-                    'total_chunks': len(nodes),
-                    'original_doc_id': doc.doc_id,
-                    'level': node.metadata.get('level', 0),
-                    'section': node.metadata.get('section_name', None)
-                }
-                
-                cleaned_docs.append(Document(text=node.text, metadata=metadata))
+        # Process batches in parallel with progress bar
+        futures = [executor.submit(process_batch, batch) for batch in batches]
+        
+        for future in tqdm(concurrent.futures.as_completed(futures), 
+                         total=len(futures), 
+                         desc="Processing documents"):
+            cleaned_docs.extend(future.result())
     
     return cleaned_docs
 
@@ -106,6 +121,10 @@ def chat_session(storage_context):
     if collection_count == 0:
         print("Creating new index...")
         documents = process_documents("data", CONFIG['batch_size'])
+        
+        # Process embeddings in parallel
+        Settings.num_output_threads = min(32, multiprocessing.cpu_count())
+        
         index = VectorStoreIndex.from_documents(
             documents, 
             storage_context=storage_context, 
