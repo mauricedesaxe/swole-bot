@@ -133,6 +133,11 @@ def chat_session(storage_context):
         node_relationships=True,
         similarity_top_k=5,
         context_window=4096,
+        output_formatter=lambda response, nodes: (
+            f"{response}\n\nSources:\n" + 
+            "\n".join([f"- {node.metadata['source']}" for node in nodes])
+        ),
+        include_source_metadata=True
     )
     print("\nChat session started. Type 'exit' to end.")
 
