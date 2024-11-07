@@ -8,10 +8,13 @@ from llama_index.core.schema import Document
 from dotenv import load_dotenv
 import re
 from llama_index.core.node_parser import HierarchicalNodeParser
+from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.node_parser import TokenTextSplitter
 from config import CONFIG
 import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
+from transformers import pipeline
 
 def setup():
     """
@@ -34,60 +37,79 @@ def setup():
     
     return StorageContext.from_defaults(vector_store=vector_store)  # Return the storage context and config
 
+def clean_text(text):
+    # Remove special characters while preserving meaningful punctuation
+    cleaned = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"\'$%]', ' ', text)
+    # Normalize whitespace
+    cleaned = ' '.join(cleaned.split())
+    # Remove repeated punctuation
+    cleaned = re.sub(r'([.,!?])\1+', r'\1', cleaned)
+    return cleaned
+
+def extract_metadata(text):
+    metadata = {
+        'processed_date': datetime.now().isoformat(),
+        'word_count': len(text.split()),
+        'char_count': len(text),
+        'sentences': len(re.split(r'[.!?]+', text)),
+        'has_numbers': bool(re.search(r'\d', text)),
+        'has_citations': bool(re.search(r'\[\d+\]|\(\d{4}\)', text))
+    }
+    return metadata
+
 def process_document_batch(batch, node_parser):
     """Process a single batch of documents"""
     batch_docs = []
     for doc in batch:
-        cleaned_text = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"]', '', doc.text)
-        batch_docs.append(Document(text=cleaned_text, metadata={"source": doc.metadata.get("file_path", "")}))
+        # Enhanced text cleaning
+        cleaned_text = clean_text(doc.text)
+        
+        # Extract rich metadata
+        base_metadata = extract_metadata(cleaned_text)
+        base_metadata.update({"source": doc.metadata.get("file_path", "")})
+        
+        # Create document with enhanced metadata
+        batch_docs.append(Document(text=cleaned_text, metadata=base_metadata))
     
+    # Process with enhanced node parser
     nodes = node_parser.get_nodes_from_documents(batch_docs)
     
     cleaned_docs = []
     for doc, node in zip(batch_docs, nodes):
+        # Detect semantic sections for each chunk
+        section_info = detect_semantic_sections(node.text)
+        
+        # Combine all metadata
         metadata = {
             **doc.metadata,
             **node.metadata,
-            'char_count': len(node.text),
-            'processed_date': datetime.now().isoformat(),
+            **section_info,
             'chunk_index': len(cleaned_docs),
             'total_chunks': len(nodes),
             'level': node.metadata.get('level', 0),
-            'section': node.metadata.get('section_name', None)
+            'next_chunk_id': node.relationships.get('next', None),
+            'prev_chunk_id': node.relationships.get('previous', None)
         }
+        
         cleaned_docs.append(Document(text=node.text, metadata=metadata))
     
     return cleaned_docs
 
 def process_documents(directory, batch_size):
-    """
-    Processes documents using multi-level semantic chunking with parallel processing.
-    """
     reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
     documents = reader.load_data()
     
-    # Create hierarchical chunking configuration
-    chunk_sizes = {
-        "text": CONFIG['chunk_size'],
-        "paragraph": CONFIG['chunk_size'] * 2
-    }
+    # Create enhanced node parser
+    node_parser = create_enhanced_node_parser()
     
-    # Initialize hierarchical parser with multi-level chunking
-    node_parser = HierarchicalNodeParser.from_defaults(
-        chunk_sizes=[chunk_sizes["text"], chunk_sizes["paragraph"]],
-        include_metadata=True
-    )
-    
-    # Create chunks of documents for parallel processing
+    # Use larger batch size since we have plenty of RAM
+    batch_size = min(50, len(documents))
     batches = [documents[i:i + batch_size] for i in range(0, len(documents), batch_size)]
     
     cleaned_docs = []
-    # Use ThreadPoolExecutor for I/O-bound operations
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, len(batches))) as executor:
-        # Create a partial function with node_parser
+    # Use more workers for parallel processing
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(64, len(batches))) as executor:
         process_batch = lambda batch: process_document_batch(batch, node_parser)
-        
-        # Process batches in parallel with progress bar
         futures = [executor.submit(process_batch, batch) for batch in batches]
         
         for future in tqdm(concurrent.futures.as_completed(futures), 
@@ -161,6 +183,64 @@ def chat_session(storage_context):
         if user_input.lower() in ['exit', 'quit']:
             break
         print("\nAssistant:", chat_engine.chat(user_input).response)
+
+def create_enhanced_node_parser():
+    # Create a multi-level chunking strategy with more granular levels
+    chunking_levels = [
+        # Level 1: Fine-grained chunks for precise retrieval
+        {"chunk_size": CONFIG['chunk_size'], "chunk_overlap": CONFIG['chunk_overlap']},
+        # Level 2: Sentence-level chunks
+        {"chunk_size": CONFIG['chunk_size'] * 2, "chunk_overlap": CONFIG['chunk_overlap'] * 2},
+        # Level 3: Paragraph-level chunks
+        {"chunk_size": CONFIG['chunk_size'] * 4, "chunk_overlap": CONFIG['chunk_overlap'] * 3},
+        # Level 4: Section-level chunks
+        {"chunk_size": CONFIG['chunk_size'] * 8, "chunk_overlap": CONFIG['chunk_overlap'] * 4}
+    ]
+    
+    return HierarchicalNodeParser.from_defaults(
+        chunk_sizes=[level["chunk_size"] for level in chunking_levels],
+        include_metadata=True,
+        include_prev_next_rel=True
+    )
+
+def detect_semantic_sections(text):
+    # Use regex patterns to identify section types based on common patterns
+    patterns = {
+        'introduction': r'\b(introduction|background|overview)\b',
+        'methodology': r'\b(method|methodology|procedure|protocol)\b',
+        'results': r'\b(results|findings|outcomes)\b',
+        'discussion': r'\b(discussion|analysis|interpretation)\b',
+        'conclusion': r'\b(conclusion|summary|final)\b',
+        'abstract': r'\b(abstract|summary)\b',
+        'clinical_findings': r'\b(clinical|patient|treatment)\b',
+        'statistical_analysis': r'\b(statistical|analysis|significance|p-value)\b'
+    }
+    
+    # Check each pattern and calculate confidence based on word frequency
+    matches = {}
+    text_lower = text.lower()
+    total_matches = 0
+    
+    for section, pattern in patterns.items():
+        count = len(re.findall(pattern, text_lower))
+        matches[section] = count
+        total_matches += count
+    
+    # Sort sections by match count
+    sorted_sections = sorted(matches.items(), key=lambda x: x[1], reverse=True)
+    
+    # Calculate confidence scores (normalized)
+    total_matches = max(total_matches, 1)  # Avoid division by zero
+    result = {
+        'primary_section': sorted_sections[0][0],
+        'primary_confidence': sorted_sections[0][1] / total_matches,
+        'secondary_section': sorted_sections[1][0] if len(sorted_sections) > 1 else 'unknown',
+        'secondary_confidence': sorted_sections[1][1] / total_matches if len(sorted_sections) > 1 else 0.0,
+        'tertiary_section': sorted_sections[2][0] if len(sorted_sections) > 2 else 'unknown',
+        'tertiary_confidence': sorted_sections[2][1] / total_matches if len(sorted_sections) > 2 else 0.0
+    }
+    
+    return result
 
 if __name__ == "__main__":
     storage_context, config = setup()
