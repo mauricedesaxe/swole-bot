@@ -17,6 +17,7 @@ import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
 from config import CONFIG
+import openai
 
 def setup():
     """Initializes the environment and loads configuration settings."""
@@ -141,9 +142,10 @@ def process_document_batch(batch, node_parser):
     ]
 
 def extract_metadata(text):
-    """Extracts metadata from the input text."""
+    """Extracts metadata from the input text using OpenAI's LLM for enhanced classification."""
 
-    return {
+    # Basic metadata extraction
+    basic_metadata = {
         'processed_date': datetime.now().isoformat(),
         'word_count': len(text.split()),
         'char_count': len(text),
@@ -151,6 +153,22 @@ def extract_metadata(text):
         'has_numbers': bool(re.search(r'\d', text)),
         'has_citations': bool(re.search(r'\[\d+\]|\(\d{4}\)', text)),
     }
+
+    # Use OpenAI to classify the text and extract additional metadata
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": f"Analyze the following text and provide relevant metadata such as themes, tone, and potential categories:\n\n{text}"}
+            ],
+            max_tokens=150
+        )
+        llm_metadata = response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error while calling OpenAI API: {e}")
+        llm_metadata = "Unable to extract LLM metadata"
+
+    return {**basic_metadata, 'llm_metadata': llm_metadata}
 
 def detect_semantic_sections(text):
     """Detects semantic sections in the text."""
