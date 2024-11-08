@@ -171,31 +171,46 @@ def extract_metadata(text):
     return {**basic_metadata, 'llm_metadata': llm_metadata}
 
 def detect_semantic_sections(text):
-    """Detects semantic sections in the text."""
+    """Detects semantic sections in the text using OpenAI for improved accuracy."""
     
-    patterns = {
-        'introduction': r'\b(introduction|background|overview)\b',
-        'methodology': r'\b(method|methodology|procedure|protocol)\b',
-        'results': r'\b(results|findings|outcomes)\b',
-        'discussion': r'\b(discussion|analysis|interpretation)\b',
-        'conclusion': r'\b(conclusion|summary|final)\b',
-        'abstract': r'\b(abstract|summary)\b',
-        'clinical_findings': r'\b(clinical|patient|treatment)\b',
-        'statistical_analysis': r'\b(statistical|analysis|significance|p-value)\b',
-    }
-    
-    matches = {section: len(re.findall(pattern, text.lower())) for section, pattern in patterns.items()}
-    total_matches = sum(matches.values()) or 1  # Avoid division by zero
-    sorted_sections = sorted(matches.items(), key=lambda x: x[1], reverse=True)
-    
-    return {
-        'primary_section': sorted_sections[0][0],
-        'primary_confidence': sorted_sections[0][1] / total_matches,
-        'secondary_section': sorted_sections[1][0] if len(sorted_sections) > 1 else 'unknown',
-        'secondary_confidence': sorted_sections[1][1] / total_matches if len(sorted_sections) > 1 else 0.0,
-        'tertiary_section': sorted_sections[2][0] if len(sorted_sections) > 2 else 'unknown',
-        'tertiary_confidence': sorted_sections[2][1] / total_matches if len(sorted_sections) > 2 else 0.0,
-    }
+    # Use OpenAI to analyze the text and suggest semantic sections
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": f"Analyze the following text and identify its semantic sections, considering it may include medical studies, fitness blog articles, or sports literature:\n\n{text}"}
+            ],
+            max_tokens=150
+        )
+        semantic_sections = response.choices[0].message.content.strip().split('\n')
+        
+        # Parse the response into a structured format
+        sections = {}
+        for section in semantic_sections:
+            if ':' in section:
+                key, value = section.split(':', 1)
+                sections[key.strip().lower()] = value.strip()
+        
+        # Calculate confidence based on the presence of sections
+        total_matches = len(sections) or 1  # Avoid division by zero
+        return {
+            'primary_section': list(sections.keys())[0] if sections else 'unknown',
+            'primary_confidence': 1.0 / total_matches,
+            'secondary_section': list(sections.keys())[1] if len(sections) > 1 else 'unknown',
+            'secondary_confidence': 1.0 / total_matches if len(sections) > 1 else 0.0,
+            'tertiary_section': list(sections.keys())[2] if len(sections) > 2 else 'unknown',
+            'tertiary_confidence': 1.0 / total_matches if len(sections) > 2 else 0.0,
+        }
+    except Exception as e:
+        print(f"Error while calling OpenAI API: {e}")
+        return {
+            'primary_section': 'unknown',
+            'primary_confidence': 0.0,
+            'secondary_section': 'unknown',
+            'secondary_confidence': 0.0,
+            'tertiary_section': 'unknown',
+            'tertiary_confidence': 0.0,
+        }
 
 if __name__ == "__main__":
     storage_context = setup()
