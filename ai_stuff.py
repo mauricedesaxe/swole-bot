@@ -31,6 +31,10 @@ def setup():
         model="gpt-4o-mini",
         temperature=0.0,
         system_prompt=SYSTEM_PROMPT,
+        output_formatter=lambda response, nodes: (
+            f"{response}\n\nSources:\n" + 
+            "\n".join([f"- {node.metadata['source']}" for node in nodes])
+        ),
     )
     return StorageContext.from_defaults(vector_store=vector_store)
 
