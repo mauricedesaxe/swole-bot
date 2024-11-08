@@ -20,6 +20,7 @@ from config import CONFIG
 
 def setup():
     """Initializes the environment and loads configuration settings."""
+
     load_dotenv()
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_or_create_collection("my_collection")
@@ -31,63 +32,9 @@ def setup():
     )
     return StorageContext.from_defaults(vector_store=vector_store)
 
-def extract_metadata(text):
-    """Extracts metadata from the input text."""
-    return {
-        'processed_date': datetime.now().isoformat(),
-        'word_count': len(text.split()),
-        'char_count': len(text),
-        'sentences': len(re.split(r'[.!?]+', text)),
-        'has_numbers': bool(re.search(r'\d', text)),
-        'has_citations': bool(re.search(r'\[\d+\]|\(\d{4}\)', text)),
-    }
-
-def process_document_batch(batch, node_parser):
-    """Processes a single batch of documents."""
-    batch_docs = [
-        Document(
-            text=doc.text,
-            metadata={**extract_metadata(doc.text), "source": doc.metadata.get("file_path", "")}
-        )
-        for doc in batch
-    ]
-    
-    nodes = node_parser.get_nodes_from_documents(batch_docs)
-    return [
-        Document(
-            text=node.text,
-            metadata={
-                **doc.metadata,
-                **node.metadata,
-                **detect_semantic_sections(node.text),
-                'chunk_index': i,
-                'total_chunks': len(nodes),
-                'level': node.metadata.get('level', 0),
-                'next_chunk_id': node.relationships.get('next'),
-                'prev_chunk_id': node.relationships.get('previous'),
-            }
-        )
-        for i, (doc, node) in enumerate(zip(batch_docs, nodes))
-    ]
-
-def process_documents(directory, batch_size):
-    """Processes documents in the specified directory."""
-    reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
-    documents = reader.load_data()
-    node_parser = create_enhanced_node_parser()
-    batch_size = min(batch_size, len(documents))
-    batches = [documents[i:i + batch_size] for i in range(0, len(documents), batch_size)]
-    
-    cleaned_docs = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(64, len(batches))) as executor:
-        futures = [executor.submit(process_document_batch, batch, node_parser) for batch in batches]
-        for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing documents"):
-            cleaned_docs.extend(future.result())
-    
-    return cleaned_docs
-
 def chat_session(storage_context):
     """Starts a chat session with the user."""
+
     if not os.path.exists("data") or not os.listdir("data"):
         print("No data found. Please run 'make scrape' first.")
         return
@@ -131,8 +78,26 @@ def chat_session(storage_context):
             break
         print("\nAssistant:", chat_engine.chat(user_input).response)
 
+def process_documents(directory, batch_size):
+    """Processes documents in the specified directory."""
+
+    reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
+    documents = reader.load_data()
+    node_parser = create_enhanced_node_parser()
+    batch_size = min(batch_size, len(documents))
+    batches = [documents[i:i + batch_size] for i in range(0, len(documents), batch_size)]
+    
+    cleaned_docs = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(64, len(batches))) as executor:
+        futures = [executor.submit(process_document_batch, batch, node_parser) for batch in batches]
+        for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing documents"):
+            cleaned_docs.extend(future.result())
+    
+    return cleaned_docs
+
 def create_enhanced_node_parser():
     """Creates a multi-level chunking strategy with more granular levels."""
+
     chunking_levels = [
         {"chunk_size": CONFIG['chunk_size'], "chunk_overlap": CONFIG['chunk_overlap']},
         {"chunk_size": CONFIG['chunk_size'] * 2, "chunk_overlap": CONFIG['chunk_overlap'] * 2},
@@ -146,8 +111,50 @@ def create_enhanced_node_parser():
         include_prev_next_rel=True,
     )
 
+def process_document_batch(batch, node_parser):
+    """Processes a single batch of documents."""
+
+    batch_docs = [
+        Document(
+            text=doc.text,
+            metadata={**extract_metadata(doc.text), "source": doc.metadata.get("file_path", "")}
+        )
+        for doc in batch
+    ]
+    
+    nodes = node_parser.get_nodes_from_documents(batch_docs)
+    return [
+        Document(
+            text=node.text,
+            metadata={
+                **doc.metadata,
+                **node.metadata,
+                **detect_semantic_sections(node.text),
+                'chunk_index': i,
+                'total_chunks': len(nodes),
+                'level': node.metadata.get('level', 0),
+                'next_chunk_id': node.relationships.get('next'),
+                'prev_chunk_id': node.relationships.get('previous'),
+            }
+        )
+        for i, (doc, node) in enumerate(zip(batch_docs, nodes))
+    ]
+
+def extract_metadata(text):
+    """Extracts metadata from the input text."""
+
+    return {
+        'processed_date': datetime.now().isoformat(),
+        'word_count': len(text.split()),
+        'char_count': len(text),
+        'sentences': len(re.split(r'[.!?]+', text)),
+        'has_numbers': bool(re.search(r'\d', text)),
+        'has_citations': bool(re.search(r'\[\d+\]|\(\d{4}\)', text)),
+    }
+
 def detect_semantic_sections(text):
     """Detects semantic sections in the text."""
+    
     patterns = {
         'introduction': r'\b(introduction|background|overview)\b',
         'methodology': r'\b(method|methodology|procedure|protocol)\b',

@@ -5,6 +5,15 @@ import time
 from studies import urls
 from openai import OpenAI
 
+def download_urls():
+    os.makedirs("data", exist_ok=True)
+    domain_failures = set()
+    
+    for url in urls:
+        if urlparse(url).netloc in domain_failures:
+            print(f"Skipping {url} due to previous failure.")
+            continue
+        download_as_markdown(url, domain_failures)
 
 def download_as_markdown(url, domain_failures):
     headers = {
@@ -76,16 +85,6 @@ def download_as_markdown(url, domain_failures):
             if attempt == 2:
                 domain_failures.add(urlparse(url).netloc)
             time.sleep(2 * (attempt + 1))
-
-def download_urls():
-    os.makedirs("data", exist_ok=True)
-    domain_failures = set()
-    
-    for url in urls:
-        if urlparse(url).netloc in domain_failures:
-            print(f"Skipping {url} due to previous failure.")
-            continue
-        download_as_markdown(url, domain_failures)
 
 if __name__ == "__main__":
     download_urls()
