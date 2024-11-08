@@ -23,12 +23,12 @@ def download_as_markdown(url, domain_failures):
             # Take only the first 1000 characters for the relevance check
             content_preview = markdown_content[:1000]
             
-            # Call OpenAI to check if the content is related to testosterone
+            # Call OpenAI to check if the content is related to the topic
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4o-mini",
                 messages=[
-                    {"role": "user", "content": f"Does the following excerpt from an academic paper seem related to testosterone in any way? Answer with 'yes' or 'no'. Excerpt: {content_preview}"}
+                    {"role": "user", "content": f"Does the following excerpt from an academic paper seem related to the topics of testosterone, TRT, weightlifting, sports medicine, weight loss, or fitness in any way? Answer with 'yes' or 'no'. Excerpt: \n\n{content_preview}"}
                 ],
                 max_tokens=5
             )
@@ -37,7 +37,7 @@ def download_as_markdown(url, domain_failures):
             is_related = response.choices[0].message.content.strip().lower()
 
             if "yes" not in is_related:
-                print(f"Content not related to testosterone. Stopping download for {url}.")
+                print(f"Content not related to the topics. Stopping download for {url}.")
                 return
             
             # Try to find title in markdown content
