@@ -16,8 +16,9 @@ from llama_index.core.node_parser import HierarchicalNodeParser
 import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
-from config import CONFIG
 import openai
+
+SYSTEM_PROMPT = "You are a direct and helpful AI assistant. Focus on providing clear, actionable information without adding disclaimers about consulting healthcare providers. Users are aware of when they need to seek professional help. Provide straightforward answers to questions while maintaining accuracy"
 
 def setup():
     """Initializes the environment and loads configuration settings."""
@@ -27,9 +28,9 @@ def setup():
     collection = client.get_or_create_collection("my_collection")
     vector_store = ChromaVectorStore(chroma_collection=collection)
     Settings.llm = OpenAI(
-        model=CONFIG['model'],
-        temperature=CONFIG['temperature'],
-        system_prompt=CONFIG['system_prompt'],
+        model="gpt-4o-mini",
+        temperature=0.0,
+        system_prompt=SYSTEM_PROMPT,
     )
     return StorageContext.from_defaults(vector_store=vector_store)
 
@@ -45,7 +46,7 @@ def chat_session(storage_context):
     
     if collection_count == 0:
         print("Creating new index...")
-        documents = process_documents("data", CONFIG['batch_size'])
+        documents = process_documents("data", 50)
         Settings.num_output_threads = min(32, multiprocessing.cpu_count())
         index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)
     else:
@@ -55,13 +56,13 @@ def chat_session(storage_context):
         except Exception as e:
             print(f"Error loading existing index: {str(e)}")
             print("Creating new index instead...")
-            documents = process_documents("data", CONFIG['batch_size'])
+            documents = process_documents("data", 50)
             index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)
 
     chat_engine = index.as_chat_engine(
         chat_mode="context",
         verbose=True,
-        system_prompt=CONFIG['system_prompt'],
+        system_prompt=SYSTEM_PROMPT,
         node_relationships=True,
         similarity_top_k=5,
         context_window=4096,
@@ -100,10 +101,10 @@ def create_enhanced_node_parser():
     """Creates a multi-level chunking strategy with more granular levels."""
 
     chunking_levels = [
-        {"chunk_size": CONFIG['chunk_size'], "chunk_overlap": CONFIG['chunk_overlap']},
-        {"chunk_size": CONFIG['chunk_size'] * 2, "chunk_overlap": CONFIG['chunk_overlap'] * 2},
-        {"chunk_size": CONFIG['chunk_size'] * 4, "chunk_overlap": CONFIG['chunk_overlap'] * 3},
-        {"chunk_size": CONFIG['chunk_size'] * 8, "chunk_overlap": CONFIG['chunk_overlap'] * 4},
+        {"chunk_size": 1024, "chunk_overlap": 256},
+        {"chunk_size": 1024 * 2, "chunk_overlap": 256 * 2},
+        {"chunk_size": 1024 * 4, "chunk_overlap": 256 * 3},
+        {"chunk_size": 1024 * 8, "chunk_overlap": 256 * 4},
     ]
     
     return HierarchicalNodeParser.from_defaults(
