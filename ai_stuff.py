@@ -35,6 +35,8 @@ def setup():
             f"{response}\n\nSources:\n" + 
             "\n".join([f"- {node.metadata['source']}" for node in nodes])
         ),
+        response_mode="tree_summarize",
+        streaming=True,
     )
     return StorageContext.from_defaults(vector_store=vector_store)
 
@@ -74,7 +76,9 @@ def chat_session(storage_context):
             f"{response}\n\nSources:\n" + 
             "\n".join([f"- {node.metadata['source']}" for node in nodes])
         ),
-        include_source_metadata=True
+        include_source_metadata=True,
+        response_mode="tree_summarize",
+        streaming=True,
     )
     print("\nChat session started. Type 'exit' to end.")
 
