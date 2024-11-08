@@ -31,22 +31,6 @@ def setup():
     )
     return StorageContext.from_defaults(vector_store=vector_store)
 
-def clean_text(text):
-    """Preserves medical terminology, units, and measurements while cleaning text."""
-    # Preserve common medical/fitness units and measurements
-    text = re.sub(r'(\d+)(?:\s*)(mg|kg|lb|g|ml|ng|dl|pmol|nmol|iu|cc|mcg)', r'\1 \2', text)
-    
-    # Preserve common medical symbols
-    text = re.sub(r'[^\w\s.,!?;:()\n\-\[\]"\'$%±<>°→←↔️∆/]', ' ', text)
-    
-    # Normalize whitespace while preserving sentence structure
-    text = ' '.join(text.split())
-    
-    # Standardize unit formatting
-    text = re.sub(r'(\d+)\s*(mg|kg|lb|g|ml|ng|dl|pmol|nmol|iu|cc|mcg)', r'\1\2', text)
-    
-    return text
-
 def extract_metadata(text):
     """Extracts metadata from the input text."""
     return {
@@ -62,8 +46,8 @@ def process_document_batch(batch, node_parser):
     """Processes a single batch of documents."""
     batch_docs = [
         Document(
-            text=clean_text(doc.text),
-            metadata={**extract_metadata(clean_text(doc.text)), "source": doc.metadata.get("file_path", "")}
+            text=doc.text,
+            metadata={**extract_metadata(doc.text), "source": doc.metadata.get("file_path", "")}
         )
         for doc in batch
     ]
