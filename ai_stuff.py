@@ -90,7 +90,7 @@ def process_documents(directory, batch_size):
     reader = SimpleDirectoryReader(input_dir=directory, recursive=False)
     documents = reader.load_data()
     node_parser = create_enhanced_node_parser()
-    batch_size = min(batch_size, len(documents))
+    batch_size = max(1, min(batch_size, len(documents)))
     batches = [documents[i:i + batch_size] for i in range(0, len(documents), batch_size)]
     
     cleaned_docs = []
