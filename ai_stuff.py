@@ -18,6 +18,12 @@ from tqdm import tqdm
 import multiprocessing
 import openai
 
+# TODO these things things could be improved:
+# No feedback loop for response quality
+# No reranking of retrieved documents
+# No hybrid search (combining dense and sparse retrievals)
+# No caching of common queries
+
 SYSTEM_PROMPT = "You are a direct and helpful AI assistant with great expertise in sports medicine, weightlifting, and testosterone. Focus on providing clear, actionable information without adding disclaimers about consulting healthcare providers. Users are aware of when they need to seek professional help. Provide straightforward answers to questions while maintaining accuracy. Always provide sources for your answers. Always attempt to ask follow up questions to clarify your understanding of the user's question."
 
 def setup():
