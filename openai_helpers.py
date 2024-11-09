@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 import backoff
 import openai
 import os
+import threading
 
 class RateLimiter:
     """
@@ -41,6 +42,7 @@ class RateLimiter:
 
 
 rate_limiter = RateLimiter(tokens_per_min=190_000)  # Setting slightly below the 200k limit
+mutex = threading.Lock()  # Mutex for synchronizing OpenAI calls
 
 @backoff.on_exception(
     backoff.expo,
@@ -50,17 +52,23 @@ rate_limiter = RateLimiter(tokens_per_min=190_000)  # Setting slightly below the
 )
 def make_openai_call(messages, model="gpt-4o-mini", max_tokens=150, temperature=0.0):
     """Make an OpenAI API call with rate limiting and retries."""
-    
     # Estimate tokens (rough estimate)
     estimated_tokens = sum(len(m["content"].split()) * 1.3 for m in messages) + max_tokens
     
     rate_limiter.wait_if_needed(estimated_tokens)
     
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        max_tokens=max_tokens,
-        temperature=temperature
-    )
-    return response
+    with mutex:  # Ensure only one call is made at a time
+        try:
+            client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+            return response
+        except openai.RateLimitError as e:
+            if "Rate limit" in str(e): 
+                print(f"Rate limit exceeded: {e}. Retrying after waiting.")
+                time.sleep(1)  
+            raise  
