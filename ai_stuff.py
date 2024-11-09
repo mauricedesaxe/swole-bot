@@ -15,7 +15,7 @@ from llama_index.core.node_parser import HierarchicalNodeParser
 import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
-import openai
+from openai_helpers import make_openai_call
 
 # TODO these things things could be improved:
 # No feedback loop for response quality
@@ -156,8 +156,6 @@ def process_document_batch(batch, node_parser):
 
 def extract_metadata(text):
     """Extracts metadata from the input text using OpenAI's LLM for enhanced classification."""
-
-    # Basic metadata extraction
     basic_metadata = {
         'processed_date': datetime.now().isoformat(),
         'word_count': len(text.split()),
@@ -167,21 +165,16 @@ def extract_metadata(text):
         'has_citations': bool(re.search(r'\[\d+\]|\(\d{4}\)', text)),
     }
 
-    # Use OpenAI to classify the text and extract additional metadata
     try:
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{
-                "role": "system",
-                "content": "You are a metadata classifier. Analyze text and provide key themes, tone, and categories in a concise format."
-            }, {
-                "role": "user",
-                "content": f"Analyze this text and provide relevant metadata:\n\n{text}"
-            }],
-            max_tokens=150,
-            temperature=0.0
-        )
+        messages = [{
+            "role": "system",
+            "content": "You are a metadata classifier. Analyze text and provide key themes, tone, and categories in a concise format."
+        }, {
+            "role": "user",
+            "content": f"Analyze this text and provide relevant metadata:\n\n{text}"
+        }]
+        
+        response = make_openai_call(messages)
         llm_metadata = response.choices[0].message.content.strip()
     except Exception as e:
         print(f"Error while calling OpenAI API: {e}")
@@ -191,32 +184,25 @@ def extract_metadata(text):
 
 def detect_semantic_sections(text):
     """Detects semantic sections in the text using OpenAI for improved accuracy."""
-    
     try:
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{
-                "role": "system",
-                "content": "You are a document structure analyzer. Identify main sections of text and categorize them."
-            }, {
-                "role": "user",
-                "content": f"Analyze this text and identify its semantic sections, considering medical studies, fitness articles, or sports literature:\n\n{text}"
-            }],
-            max_tokens=150,
-            temperature=0.0
-        )
+        messages = [{
+            "role": "system",
+            "content": "You are a document structure analyzer. Identify main sections of text and categorize them."
+        }, {
+            "role": "user",
+            "content": f"Analyze this text and identify its semantic sections, considering medical studies, fitness articles, or sports literature:\n\n{text}"
+        }]
+        
+        response = make_openai_call(messages)
         semantic_sections = response.choices[0].message.content.strip().split('\n')
         
-        # Parse the response into a structured format
         sections = {}
         for section in semantic_sections:
             if ':' in section:
                 key, value = section.split(':', 1)
                 sections[key.strip().lower()] = value.strip()
         
-        # Calculate confidence based on the presence of sections
-        total_matches = len(sections) or 1  # Avoid division by zero
+        total_matches = len(sections) or 1
         return {
             'primary_section': list(sections.keys())[0] if sections else 'unknown',
             'primary_confidence': 1.0 / total_matches,

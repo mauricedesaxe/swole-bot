@@ -3,7 +3,7 @@ import os
 from urllib.parse import urlparse
 import time
 from studies import urls
-from openai import OpenAI
+from openai_helpers import make_openai_call
 
 def download_urls():
     os.makedirs("data", exist_ok=True)
@@ -32,9 +32,7 @@ def download_as_markdown(url, domain_failures):
         content_preview = markdown_content[:1000]
         
         # Call OpenAI to check if the content is related to the topic
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
+        response = make_openai_call(
             messages=[
                 {"role": "user", "content": f"Does the following excerpt from an academic paper seem related to the topics of testosterone, TRT, weightlifting, sports medicine, weight loss, or fitness in any way? Answer with 'yes' or 'no'. Excerpt: \n\n{content_preview}"}
             ],
