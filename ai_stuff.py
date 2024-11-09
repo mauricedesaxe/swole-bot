@@ -10,7 +10,6 @@ from llama_index.core import (
 from llama_index.llms.openai import OpenAI
 from llama_index.vector_stores.chroma.base import ChromaVectorStore
 from llama_index.core.schema import Document
-from dotenv import load_dotenv
 import re
 from llama_index.core.node_parser import HierarchicalNodeParser
 import concurrent.futures
@@ -29,7 +28,6 @@ SYSTEM_PROMPT = "You are a direct and helpful AI assistant with great expertise 
 def setup():
     """Initializes the environment and loads configuration settings."""
 
-    load_dotenv()
     client = chromadb.PersistentClient(path="./chroma_db")
     collection = client.get_or_create_collection("my_collection")
     vector_store = ChromaVectorStore(chroma_collection=collection)

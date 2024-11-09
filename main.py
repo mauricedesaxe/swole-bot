@@ -1,6 +1,9 @@
 import sys
 from scrape import download_urls
 from ai_stuff import setup, chat_session
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def main():
     if len(sys.argv) > 1:
