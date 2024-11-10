@@ -16,6 +16,8 @@ import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
 from openai_helpers import make_openai_call
+from llama_index.embeddings.jinaai import JinaEmbedding
+from llama_index.postprocessor.jinaai_rerank import JinaRerank
 
 # TODO these things things could be improved:
 # No feedback loop for response quality
@@ -54,27 +56,45 @@ def chat_session(storage_context):
     chroma_collection = storage_context.vector_store._collection
     collection_count = chroma_collection.count()
     
+    jina_embeddings = JinaEmbedding(api_key=os.getenv("JINA_API_KEY"), top_n=10)
+
     if collection_count == 0:
         print("Creating new index...")
         documents = process_documents("data", 50)
         Settings.num_output_threads = min(32, multiprocessing.cpu_count())
-        index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)
+        index = VectorStoreIndex.from_documents(
+            documents=documents,
+            embed_model=jina_embeddings,
+            storage_context=storage_context,
+            show_progress=True
+        )
     else:
         print("Loading existing index...")
         try:
-            index = VectorStoreIndex.from_vector_store(storage_context.vector_store)
+            index = VectorStoreIndex.from_vector_store(
+                storage_context.vector_store,
+                embed_model=jina_embeddings
+            )
         except Exception as e:
             print(f"Error loading existing index: {str(e)}")
             print("Creating new index instead...")
             documents = process_documents("data", 50)
-            index = VectorStoreIndex.from_documents(documents, storage_context=storage_context, show_progress=True)
+            index = VectorStoreIndex.from_documents(
+                documents=documents,
+                embed_model=jina_embeddings,
+                storage_context=storage_context,
+                show_progress=True
+            )
+
+    jina_rerank = JinaRerank(api_key=os.getenv("JINA_API_KEY"), top_n=10)
 
     chat_engine = index.as_chat_engine(
         chat_mode="context",
         verbose=True,
         system_prompt=SYSTEM_PROMPT,
         node_relationships=True,
-        similarity_top_k=5,
+        similarity_top_k=10,
+        node_postprocessors=[jina_rerank],
         context_window=4096,
         output_formatter=lambda response, nodes: (
             f"{response}\n\nSources:\n" + 
