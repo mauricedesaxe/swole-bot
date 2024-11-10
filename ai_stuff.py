@@ -37,6 +37,8 @@ def setup():
         model="gpt-4o-mini",
         temperature=0.0,
         system_prompt=SYSTEM_PROMPT,
+        logprobs=None,
+        default_headers={},
         output_formatter=lambda response, nodes: (
             f"{response}\n\nSources:\n" + 
             "\n".join([f"- {node.metadata['source']}" for node in nodes])
@@ -184,63 +186,62 @@ def extract_metadata(text):
         'has_numbers': bool(re.search(r'\d', text)),
         'has_citations': bool(re.search(r'\[\d+\]|\(\d{4}\)', text)),
     }
-
-    try:
-        messages = [{
-            "role": "system",
-            "content": "You are a metadata classifier. Analyze text and provide key themes, tone, and categories in a concise format."
-        }, {
-            "role": "user",
-            "content": f"Analyze this text and provide relevant metadata:\n\n{text}"
-        }]
-        
-        response = make_openai_call(messages)
-        llm_metadata = response.choices[0].message.content.strip()
-    except Exception as e:
-        print(f"Error while calling OpenAI API: {e}")
-        llm_metadata = "Unable to extract LLM metadata"
-
-    return {**basic_metadata, 'llm_metadata': llm_metadata}
+    return basic_metadata 
 
 def detect_semantic_sections(text):
-    """Detects semantic sections in the text using OpenAI for improved accuracy."""
-    try:
-        messages = [{
-            "role": "system",
-            "content": "You are a document structure analyzer. Identify main sections of text and categorize them."
-        }, {
-            "role": "user",
-            "content": f"Analyze this text and identify its semantic sections, considering medical studies, fitness articles, or sports literature:\n\n{text}"
-        }]
+    """Detects semantic sections in the text using basic text analysis."""
+    # Look for common section headers and keywords
+    sections = []
+    
+    # Common medical/research paper sections
+    if any(keyword in text.lower() for keyword in ['abstract', 'introduction', 'background']):
+        sections.append('research_background')
+    if any(keyword in text.lower() for keyword in ['method', 'procedure', 'protocol']):
+        sections.append('methodology') 
+    if any(keyword in text.lower() for keyword in ['result', 'finding', 'outcome']):
+        sections.append('results')
+    if any(keyword in text.lower() for keyword in ['discussion', 'conclusion']):
+        sections.append('discussion')
         
-        response = make_openai_call(messages)
-        semantic_sections = response.choices[0].message.content.strip().split('\n')
+    # Common fitness/sports content sections
+    if any(keyword in text.lower() for keyword in ['workout', 'exercise', 'training']):
+        sections.append('training')
+    if any(keyword in text.lower() for keyword in ['diet', 'nutrition', 'supplement']):
+        sections.append('nutrition')
+    if any(keyword in text.lower() for keyword in ['dosage', 'protocol', 'cycle']):
+        sections.append('protocol')
+
+    # Medical condition sections
+    if any(keyword in text.lower() for keyword in ['symptom', 'diagnosis', 'condition', 'disorder']):
+        sections.append('medical_condition')
+    if any(keyword in text.lower() for keyword in ['treatment', 'therapy', 'intervention']):
+        sections.append('treatment')
+    if any(keyword in text.lower() for keyword in ['side effect', 'adverse', 'risk']):
+        sections.append('side_effects')
         
-        sections = {}
-        for section in semantic_sections:
-            if ':' in section:
-                key, value = section.split(':', 1)
-                sections[key.strip().lower()] = value.strip()
+    # Research/evidence sections
+    if any(keyword in text.lower() for keyword in ['study', 'trial', 'research', 'evidence']):
+        sections.append('research')
+    if any(keyword in text.lower() for keyword in ['meta-analysis', 'review', 'literature']):
+        sections.append('meta_analysis')
+    if any(keyword in text.lower() for keyword in ['mechanism', 'pathway', 'physiology']):
+        sections.append('mechanism_of_action')
         
-        total_matches = len(sections) or 1
-        return {
-            'primary_section': list(sections.keys())[0] if sections else 'unknown',
-            'primary_confidence': 1.0 / total_matches,
-            'secondary_section': list(sections.keys())[1] if len(sections) > 1 else 'unknown',
-            'secondary_confidence': 1.0 / total_matches if len(sections) > 1 else 0.0,
-            'tertiary_section': list(sections.keys())[2] if len(sections) > 2 else 'unknown',
-            'tertiary_confidence': 1.0 / total_matches if len(sections) > 2 else 0.0,
-        }
-    except Exception as e:
-        print(f"Error while calling OpenAI API: {e}")
-        return {
-            'primary_section': 'unknown',
-            'primary_confidence': 0.0,
-            'secondary_section': 'unknown',
-            'secondary_confidence': 0.0,
-            'tertiary_section': 'unknown',
-            'tertiary_confidence': 0.0,
-        }
+    # Ensure we have at least one section
+    if not sections:
+        sections.append('general')
+        
+    # Calculate confidence based on number of keyword matches
+    total_matches = len(sections)
+    
+    return {
+        'primary_section': sections[0] if sections else 'unknown',
+        'primary_confidence': 1.0 / total_matches if sections else 0.0,
+        'secondary_section': sections[1] if len(sections) > 1 else 'unknown',
+        'secondary_confidence': 1.0 / total_matches if len(sections) > 1 else 0.0,
+        'tertiary_section': sections[2] if len(sections) > 2 else 'unknown',
+        'tertiary_confidence': 1.0 / total_matches if len(sections) > 2 else 0.0,
+    }
 
 if __name__ == "__main__":
     storage_context = setup()
