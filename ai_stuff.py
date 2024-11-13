@@ -100,7 +100,7 @@ def chat_session(storage_context):
         context_window=4096,
         include_source_metadata=True,
         response_mode="tree_summarize",
-        streaming=False
+        streaming=True
     )
     print("\nChat session started. Type 'exit' to end.")
 
