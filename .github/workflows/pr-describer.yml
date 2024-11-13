@@ -28,33 +28,55 @@ jobs:
         run: |
           git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > pr_diff.txt
 
-      - name: Generate PR Description
+      - name: Generate PR Description and Title
+        id: generate-description
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          python - <<EOF
+          cat > pr_generator.py << 'EOL'
           import os
-          from openai_helpers import make_openai_call
+          import openai
+          
+          def make_openai_call(messages, model="gpt-4o-mini", max_tokens=150, temperature=0.0):
+              client = openai.OpenAI(api_key=os.environ['OPENAI_API_KEY'])
+              return client.chat.completions.create(
+                  model=model,
+                  messages=messages,
+                  max_tokens=max_tokens,
+                  temperature=temperature
+              )
           
           # Read the diff
           with open('pr_diff.txt', 'r') as f:
               diff_content = f.read()
           
-          # Generate PR description using our helper function
-          response = make_openai_call(
+          # Generate PR title
+          title_response = make_openai_call(
+              messages=[
+                  {"role": "system", "content": "You are a helpful assistant that creates concise, descriptive PR titles based on git diffs. Follow the format: type(scope): description, where type is feat/fix/chore/refactor/docs/test, scope is optional, and description is a brief summary."},
+                  {"role": "user", "content": f"Based on this git diff, generate a concise PR title:\n{diff_content}"}
+              ],
+              max_tokens=50
+          )
+          
+          # Generate PR description
+          desc_response = make_openai_call(
               messages=[
                   {"role": "system", "content": "You are a helpful assistant that analyzes git diffs and generates structured PR descriptions. Focus on architectural changes, code modifications, and technical details."},
                   {"role": "user", "content": f"Based on this git diff, generate a structured PR description that includes:\n1. Architectural Overview (what components were modified)\n2. Code Changes (what was changed and why)\n3. Technical Details (key implementation details)\n\nGit diff:\n{diff_content}"}
               ],
-              model="gpt-4o-mini",
-              max_tokens=1000,
-              temperature=0.0
+              max_tokens=1000
           )
           
-          # Save the description
+          # Combine title and description
+          full_description = f"Suggested Title: {title_response.choices[0].message.content}\n\n---\n\n{desc_response.choices[0].message.content}"
+          
+          # Save the combined output
           with open('pr_description.txt', 'w') as f:
-              f.write(response.choices[0].message.content)
-          EOF
+              f.write(full_description)
+          EOL
+          
+          python pr_generator.py
 
       - name: Update PR Description
         uses: peter-evans/create-or-update-comment@v3
@@ -63,3 +85,4 @@ jobs:
           body-file: pr_description.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
