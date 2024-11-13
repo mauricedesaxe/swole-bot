@@ -1,0 +1,65 @@
+name: PR Describer
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  pull-requests: write
+  contents: read
+jobs:
+  pull-request:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install openai backoff python-dotenv
+
+      - name: Get PR diff
+        id: diff
+        run: |
+          git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} > pr_diff.txt
+
+      - name: Generate PR Description
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python - <<EOF
+          import os
+          from openai_helpers import make_openai_call
+          
+          # Read the diff
+          with open('pr_diff.txt', 'r') as f:
+              diff_content = f.read()
+          
+          # Generate PR description using our helper function
+          response = make_openai_call(
+              messages=[
+                  {"role": "system", "content": "You are a helpful assistant that analyzes git diffs and generates structured PR descriptions. Focus on architectural changes, code modifications, and technical details."},
+                  {"role": "user", "content": f"Based on this git diff, generate a structured PR description that includes:\n1. Architectural Overview (what components were modified)\n2. Code Changes (what was changed and why)\n3. Technical Details (key implementation details)\n\nGit diff:\n{diff_content}"}
+              ],
+              model="gpt-4o-mini",
+              max_tokens=1000,
+              temperature=0.0
+          )
+          
+          # Save the description
+          with open('pr_description.txt', 'w') as f:
+              f.write(response.choices[0].message.content)
+          EOF
+
+      - name: Update PR Description
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-file: pr_description.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
