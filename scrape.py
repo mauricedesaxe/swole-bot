@@ -45,19 +45,10 @@ def download_as_markdown(url, domain_failures):
         response.raise_for_status()
         
         markdown_content = response.text
-        content_preview = markdown_content[:1000]
         
-        response = make_openai_call(
-            messages=[
-                {"role": "user", "content": f"Does the following excerpt from an academic paper seem related to the topics of testosterone, TRT, weightlifting, sports medicine, weight loss, or fitness in any way? Answer with 'yes' or 'no'. Excerpt: \n\n{content_preview}"}
-            ],
-            max_tokens=5
-        )
-
-        is_related = response.choices[0].message.content.strip().lower()
-
-        if "yes" not in is_related:
-            print(f"Content not related to the topics. Skipping {url}.")
+        is_related, validation_message = validate_content(markdown_content)
+        if not is_related:
+            print(validation_message)
             return None
 
         title = None
@@ -90,6 +81,52 @@ def download_as_markdown(url, domain_failures):
         print(f"Error downloading {url}: {e}")
         domain_failures.add(urlparse(url).netloc)
         raise
+
+def validate_content(content):
+    """Enhanced content validation with multiple checks across document"""
+    # Check for common anti-bot patterns in first 1000 chars
+    content_start = content[:1000].lower()
+    if any(phrase in content_start for phrase in [
+        'captcha', 'cloudflare', 'access denied', 'robot check'
+    ]):
+        return False, "Anti-bot protection detected"
+    
+    # Take samples from start, middle and end of longer texts
+    content_length = len(content)
+    samples = []
+    
+    # Always check start
+    samples.append(content[:1000])
+    
+    # For longer texts, check middle and end sections
+    if content_length > 3000:
+        mid_point = content_length // 2
+        samples.append(content[mid_point-500:mid_point+500])
+        samples.append(content[-1000:])
+    
+    # Check each sample with OpenAI
+    for i, sample in enumerate(samples):
+        response = make_openai_call(
+            messages=[{
+                "role": "user", 
+                "content": f"""Analyze this text excerpt and determine if it's related to any of these topics:
+                1. Testosterone or hormone therapy
+                2. Sports medicine or exercise science
+                3. Fitness or weightlifting
+                4. Weight loss or body composition
+                
+                Text: {sample}
+                
+                Answer only with: RELATED or UNRELATED"""
+            }],
+            max_tokens=5
+        )
+        
+        is_related = "related" in response.choices[0].message.content.strip().lower()
+        if is_related:
+            return True, "Content validation passed"
+            
+    return False, "Content not related to topics"
 
 if __name__ == "__main__":
     download_urls()
