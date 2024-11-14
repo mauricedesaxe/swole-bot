@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime, timezone
 import os
 from typing import Optional, Tuple, List
+from urllib.parse import urlparse
 
 class ScrapeTracker:
     def __init__(self, db_name: str = "scrape_tracker.db"):
@@ -31,6 +32,11 @@ class ScrapeTracker:
             conn.commit()
 
     def add_url(self, url: str, success: bool, file_path: str = None, error_message: str = None) -> None:
+        if not self.is_valid_url(url):
+            raise ValueError("Invalid URL format")
+        if file_path and not os.path.exists(file_path):
+            raise ValueError("File path does not exist")
+        
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -58,3 +64,12 @@ class ScrapeTracker:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM scraped_urls WHERE success = 0')
             conn.commit() 
+
+    def is_valid_url(self, url: str) -> bool:
+        """Validate URL format."""
+        try:
+            result = urlparse(url)
+            return all([result.scheme, result.netloc])
+        except:
+            return False
+  
