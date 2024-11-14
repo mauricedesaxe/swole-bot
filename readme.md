@@ -1,17 +1,11 @@
 Could improve by:
 
-## High priority:
-- [ ] Document chunking (split documents in semantic chunks)
-- [ ] Add source attributions in chat responses
-- [ ] Use a structured response format for the chatbot
+## TODOs
 
-## Medium priority:
-- [ ] Hybrid search (combine vector search and keyword search)
-- [ ] Better tracking for what URLs we scraped and not scraped
-- [ ] When scraping, use AI to detect if the document has medical relevance to TRT, steroids, testosterone, etc.
+- [ ] Add a tracking system for what documents have been scraped; we don't want to scrape the same document multiple times; this is especially useful as we add more sources
+- [ ] Add a more automated scraping system which crawls given websites and adds new sources;
 
-## Low priority:
-- [ ] Metadata enrichment (more metadata like URL, section headers, doc type, topic classification)
+## Maybe
 
-## Ongoing:
-- [ ] Add more studies
+- [ ] Improve source attribution in chat responses (e.g. include paper title, publication year, journal, section where information was found); maybe not worthwhile and we could just point the user to the document
+- [ ] Implement semantic chunking based on section headers, smart overlap that preserves complete sentences and dynamic chunk sized based on content type
