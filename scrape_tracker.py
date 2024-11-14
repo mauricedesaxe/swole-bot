@@ -24,8 +24,7 @@ class ScrapeTracker:
                     last_scraped TIMESTAMP,
                     success BOOLEAN,
                     error_message TEXT,
-                    file_path TEXT,
-                    content_hash TEXT
+                    file_path TEXT
                 )
             ''')
             conn.commit()
