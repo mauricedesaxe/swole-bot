@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 import os
+from typing import Optional, Tuple, List
 
 class ScrapeTracker:
     def __init__(self, db_name: str = "scrape_tracker.db"):
@@ -8,12 +9,14 @@ class ScrapeTracker:
         self.init_db()
 
     def init_db(self):
-        """Initializes the database in the ./db directorys."""
-        # make sure the db directory exists
-        os.makedirs(os.path.dirname("./db"), exist_ok=True)
+        """Initializes the database in the ./db directory."""
+        # Create the db directory if it doesn't exist
+        db_dir = "./db"
+        os.makedirs(db_dir, exist_ok=True)
 
         # create the table
-        with sqlite3.connect("./db/" + self.db_name) as conn:
+        db_path = os.path.join(db_dir, self.db_name)
+        with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS scraped_urls (
@@ -37,14 +40,14 @@ class ScrapeTracker:
             ''', (url, datetime.now(), success, error_message, file_path))
             conn.commit()
 
-    def get_url(self, url: str) -> tuple[bool, str | None]:
+    def get_url(self, url: str) -> Tuple[bool, Optional[str]]:
         with sqlite3.connect("./db/" + self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT success, file_path FROM scraped_urls WHERE url = ?', (url,))
             result = cursor.fetchone()
             return tuple(result) if result else (False, None)
 
-    def get_all_urls(self) -> list[tuple[str, datetime, bool, str, str, str]]:
+    def get_all_urls(self) -> List[Tuple[str, datetime, bool, str, str, str]]:
         with sqlite3.connect("./db/" + self.db_name) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM scraped_urls')
