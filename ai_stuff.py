@@ -98,13 +98,9 @@ def chat_session(storage_context):
         similarity_top_k=10,
         node_postprocessors=[jina_rerank],
         context_window=4096,
-        output_formatter=lambda response, nodes: (
-            f"{response}\n\nSources:\n" + 
-            "\n".join([f"- {node.metadata['source']}" for node in nodes])
-        ),
         include_source_metadata=True,
         response_mode="tree_summarize",
-        streaming=True,
+        streaming=True
     )
     print("\nChat session started. Type 'exit' to end.")
 
@@ -112,7 +108,33 @@ def chat_session(storage_context):
         user_input = input("\nYou: ").strip()
         if user_input.lower() in ['exit', 'quit']:
             break
-        print("\nAssistant:", chat_engine.chat(user_input).response)
+        
+        print(f"\nSearching through {storage_context.vector_store._collection.count()} embeddings...")
+        
+        response = chat_engine.chat(user_input)
+        
+        source_nodes = []
+        if hasattr(response, 'source_nodes'):
+            source_nodes = response.source_nodes
+            unique_sources = set()
+            filtered_nodes = []
+            for node in source_nodes:
+                source = node.metadata.get('source', '')
+                if source not in unique_sources:
+                    unique_sources.add(source)
+                    filtered_nodes.append(node)
+            
+            source_nodes = filtered_nodes
+            print(f"\nFound {len(source_nodes)} unique source nodes")
+            for i, node in enumerate(source_nodes):
+                print(f"\nSource {i+1}:")
+                print(f"Metadata: {node.metadata}")
+        else:
+            print("\nNo source_nodes attribute found in response")
+            
+        sources = [node.metadata.get('source', 'Unknown source') for node in source_nodes]
+        formatted_response = f"{response.response}\n\nSources:\n" + "\n".join([f"- {source}" for source in sources])
+        print("\nAssistant:", formatted_response)
 
 def process_documents(directory, batch_size):
     """Processes documents in the specified directory."""
