@@ -37,6 +37,15 @@ class ScrapeTracker:
         if file_path and not os.path.exists(file_path):
             raise ValueError("File path does not exist")
         
+        # Normalize URL by removing trailing slashes, converting to lowercase, and ensuring consistent scheme
+        url = url.strip().rstrip('/').lower()
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        parsed = urlparse(url)
+        url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        if parsed.query:
+            url += f"?{parsed.query}"
+        
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
