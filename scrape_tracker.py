@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from typing import Optional, Tuple, List
 
@@ -37,7 +37,7 @@ class ScrapeTracker:
                 INSERT OR REPLACE INTO scraped_urls 
                 (url, last_scraped, success, error_message, file_path)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (url, datetime.now(), success, error_message, file_path))
+            ''', (url, datetime.now(timezone.utc), success, error_message, file_path))
             conn.commit()
 
     def get_url(self, url: str) -> Tuple[bool, Optional[str]]:
