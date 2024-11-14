@@ -6,6 +6,7 @@ from typing import Optional, Tuple, List
 class ScrapeTracker:
     def __init__(self, db_name: str = "scrape_tracker.db"):
         self.db_name = db_name
+        self.db_path = os.path.join("./db", db_name)
         self.init_db()
 
     def init_db(self):
@@ -30,7 +31,7 @@ class ScrapeTracker:
             conn.commit()
 
     def add_url(self, url: str, success: bool, file_path: str = None, error_message: str = None) -> None:
-        with sqlite3.connect("./db/" + self.db_name) as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO scraped_urls 
@@ -40,20 +41,20 @@ class ScrapeTracker:
             conn.commit()
 
     def get_url(self, url: str) -> Tuple[bool, Optional[str]]:
-        with sqlite3.connect("./db/" + self.db_name) as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT success, file_path FROM scraped_urls WHERE url = ?', (url,))
             result = cursor.fetchone()
             return tuple(result) if result else (False, None)
 
-    def get_all_urls(self) -> List[Tuple[str, datetime, bool, str, str, str]]:
-        with sqlite3.connect("./db/" + self.db_name) as conn:
+    def get_all_urls(self) -> List[Tuple[str, datetime, bool, str, str]]:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM scraped_urls')
             return cursor.fetchall()
 
     def clear_failed_urls(self) -> None:
-        with sqlite3.connect("./db/" + self.db_name) as conn:
+        with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM scraped_urls WHERE success = 0')
             conn.commit() 
