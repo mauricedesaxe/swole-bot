@@ -24,7 +24,7 @@ def download_urls():
             continue
             
         # Check if URL was already successfully scraped
-        was_scraped, file_path = tracker.get_url(url)
+        was_scraped, file_path = tracker.get_scraped_url(url)
         if was_scraped and file_path and os.path.exists(file_path):
             print(f"Skipping {url} - already scraped to {file_path}")
             continue
@@ -32,15 +32,15 @@ def download_urls():
         try:
             file_path = download_as_markdown(url, domain_failures)
             if file_path:
-                tracker.add_url(url, success=True, file_path=file_path)
+                tracker.add_scraped_url(url, success=True, file_path=file_path)
                 print(f"Successfully scraped {url} to {file_path}")
             else:
-                tracker.add_url(url, success=False, error_message="Content not related to topics")
+                tracker.add_scraped_url(url, success=False, error_message="Content not related to topics")
                 print(f"Content not related to topics: {url}")
         except Exception as e:
             error_msg = str(e)
             print(f"Error scraping {url}: {error_msg}")
-            tracker.add_url(url, success=False, error_message=error_msg)
+            tracker.add_scraped_url(url, success=False, error_message=error_msg)
             domain_failures.add(urlparse(url).netloc)
 
 def download_as_markdown(url, domain_failures):
