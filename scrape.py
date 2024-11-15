@@ -1,7 +1,7 @@
 import requests
 import os
+import pandas as pd
 from urllib.parse import urlparse
-from studies import urls
 from openai_helpers import make_openai_call
 from scrape_tracker import ScrapeTracker
 
@@ -9,6 +9,14 @@ def download_urls():
     os.makedirs("data", exist_ok=True)
     domain_failures = set()
     tracker = ScrapeTracker()
+    
+    # Read URLs from CSV file
+    try:
+        df = pd.read_csv('starter_studies.csv')
+        urls = df['url'].unique().tolist()
+    except Exception as e:
+        print(f"Error reading CSV file: {e}")
+        return
     
     for url in urls:
         if urlparse(url).netloc in domain_failures:
