@@ -1,7 +1,7 @@
 import requests
 import os
+import pandas as pd
 from urllib.parse import urlparse
-from studies import urls
 from openai_helpers import make_openai_call
 from scrape_tracker import ScrapeTracker
 
@@ -10,30 +10,51 @@ def download_urls():
     domain_failures = set()
     tracker = ScrapeTracker()
     
-    for url in urls:
-        if urlparse(url).netloc in domain_failures:
-            print(f"Skipping {url} due to previous failure.")
-            continue
+    # Read URLs from CSV file
+    try:
+        df = pd.read_csv('starter_studies.csv')
+        urls = df['url'].unique().tolist()
+        # Add all URLs to tracker with default priority
+        for url in urls:
+            tracker.add_todo_url(url)
+    except Exception as e:
+        print(f"Error reading CSV file: {e}")
+        return
+    
+    # Process pending URLs in batches
+    while True:
+        pending_urls = tracker.get_next_pending_urls(limit=10)
+        if not pending_urls:
+            break
             
-        # Check if URL was already successfully scraped
-        was_scraped, file_path = tracker.get_url(url)
-        if was_scraped and file_path and os.path.exists(file_path):
-            print(f"Skipping {url} - already scraped to {file_path}")
-            continue
-            
-        try:
-            file_path = download_as_markdown(url, domain_failures)
-            if file_path:
-                tracker.add_url(url, success=True, file_path=file_path)
-                print(f"Successfully scraped {url} to {file_path}")
-            else:
-                tracker.add_url(url, success=False, error_message="Content not related to topics")
-                print(f"Content not related to topics: {url}")
-        except Exception as e:
-            error_msg = str(e)
-            print(f"Error scraping {url}: {error_msg}")
-            tracker.add_url(url, success=False, error_message=error_msg)
-            domain_failures.add(urlparse(url).netloc)
+        for url in pending_urls:
+            if urlparse(url).netloc in domain_failures:
+                print(f"Skipping {url} due to previous failure.")
+                tracker.update_url_status(url, 'failed', error_message="Domain in failure list")
+                continue
+                
+            # Get current URL info
+            url_info = tracker.get_url_info(url)
+            if url_info and url_info['status'] == 'completed' and url_info['file_path'] and os.path.exists(url_info['file_path']):
+                print(f"Skipping {url} - already scraped to {url_info['file_path']}")
+                continue
+                
+            try:
+                # Mark as in progress
+                tracker.update_url_status(url, 'in_progress')
+                
+                file_path = download_as_markdown(url, domain_failures)
+                if file_path:
+                    tracker.update_url_status(url, 'completed', file_path=file_path)
+                    print(f"Successfully scraped {url} to {file_path}")
+                else:
+                    tracker.update_url_status(url, 'failed', error_message="Content not related to topics")
+                    print(f"Content not related to topics: {url}")
+            except Exception as e:
+                error_msg = str(e)
+                print(f"Error scraping {url}: {error_msg}")
+                tracker.update_url_status(url, 'failed', error_message=error_msg)
+                domain_failures.add(urlparse(url).netloc)
 
 def download_as_markdown(url, domain_failures):
     headers = {
