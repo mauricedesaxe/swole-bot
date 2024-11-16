@@ -1,17 +1,17 @@
 import os
 from datetime import datetime
 import chromadb
-from llama_index.core import (
+from llama_index import (
     VectorStoreIndex,
     SimpleDirectoryReader,
     StorageContext,
     Settings,
 )
 from llama_index.llms.openai import OpenAI
-from llama_index.vector_stores.chroma.base import ChromaVectorStore
-from llama_index.core.schema import Document
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.schema import Document
 import re
-from llama_index.core.node_parser import HierarchicalNodeParser
+from llama_index.node_parser import HierarchicalNodeParser
 import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
