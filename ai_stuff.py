@@ -10,7 +10,7 @@ from llama_index.core.storage import StorageContext
 
 # Vector store related imports
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.legacy import VectorStoreIndex
+from llama_index.core import VectorStoreIndex
 
 # LLM and embedding related imports
 from llama_index.llms.openai import OpenAI
