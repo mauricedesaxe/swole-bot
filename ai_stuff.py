@@ -1,23 +1,28 @@
 import os
 from datetime import datetime
 import chromadb
-from llama_index.core import (
-    VectorStoreIndex,
-    SimpleDirectoryReader,
-    StorageContext,
-    Settings,
-)
-from llama_index.llms.openai import OpenAI
-from llama_index.vector_stores.chroma.base import ChromaVectorStore
+
+# Core LlamaIndex imports
+from llama_index.core import Settings, SimpleDirectoryReader
 from llama_index.core.schema import Document
-import re
 from llama_index.core.node_parser import HierarchicalNodeParser
+from llama_index.core.storage import StorageContext
+
+# Vector store related imports
+from llama_index.vector_stores.chroma import ChromaVectorStore
+from llama_index.core import VectorStoreIndex
+
+# LLM and embedding related imports
+from llama_index.llms.openai import OpenAI
+from llama_index.embeddings.jinaai import JinaEmbedding
+from llama_index.postprocessor.jinaai_rerank import JinaRerank
+
+# Utility imports
+import re
 import concurrent.futures
 from tqdm import tqdm
 import multiprocessing
 from openai_helpers import make_openai_call
-from llama_index.embeddings.jinaai import JinaEmbedding
-from llama_index.postprocessor.jinaai_rerank import JinaRerank
 
 SYSTEM_PROMPT = """You are an expert AI assistant specializing in testosterone, TRT, and sports medicine research. Follow these guidelines:
 

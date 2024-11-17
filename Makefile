@@ -1,9 +1,8 @@
-.PHONY: scrape query stats cleanup
+.PHONY: scrape chat
 
 # Default target
 all: help
 
-# Help message
 help:
 	@echo "Available commands:"
 	@echo "  make scrape    - Run the scraper to download data"
@@ -13,11 +12,11 @@ help:
 
 # Run the scraper
 scrape:
-	python main.py scrape
+	poetry run python main.py scrape
 
 # Chat with the data
 chat:
-	python main.py chat
+	poetry run python main.py chat
 
 clean-data:
 	rm -rf ./data/*
