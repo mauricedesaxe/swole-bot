@@ -72,19 +72,15 @@ def setup():
     return StorageContext.from_defaults(vector_store=vector_store)
 
 def chat_session(storage_context):
-    """Starts a chat session with the user."""
-
+    """Returns a chat engine instead of running an interactive loop"""
+    
     if not os.path.exists("data") or not os.listdir("data"):
-        print("No data found. Please run 'make scrape' first.")
-        return
+        raise Exception("No data found. Please run scraping first.")
     
     chroma_collection = storage_context.vector_store._collection
-    collection_count = chroma_collection.count()
-    
     jina_embeddings = JinaEmbedding(api_key=os.getenv("JINA_API_KEY"), top_n=10)
-
-    if collection_count == 0:
-        print("Creating new index...")
+    
+    if chroma_collection.count() == 0:
         documents = process_documents("data", 50)
         Settings.num_output_threads = min(32, multiprocessing.cpu_count())
         index = VectorStoreIndex.from_documents(
@@ -94,26 +90,14 @@ def chat_session(storage_context):
             show_progress=True
         )
     else:
-        print("Loading existing index...")
-        try:
-            index = VectorStoreIndex.from_vector_store(
-                storage_context.vector_store,
-                embed_model=jina_embeddings
-            )
-        except Exception as e:
-            print(f"Error loading existing index: {str(e)}")
-            print("Creating new index instead...")
-            documents = process_documents("data", 50)
-            index = VectorStoreIndex.from_documents(
-                documents=documents,
-                embed_model=jina_embeddings,
-                storage_context=storage_context,
-                show_progress=True
-            )
-
+        index = VectorStoreIndex.from_vector_store(
+            storage_context.vector_store,
+            embed_model=jina_embeddings
+        )
+    
     jina_rerank = JinaRerank(api_key=os.getenv("JINA_API_KEY"), top_n=10)
-
-    chat_engine = index.as_chat_engine(
+    
+    return index.as_chat_engine(
         chat_mode="context",
         verbose=True,
         system_prompt=SYSTEM_PROMPT,
@@ -125,39 +109,6 @@ def chat_session(storage_context):
         response_mode="tree_summarize",
         streaming=True
     )
-    print("\nChat session started. Type 'exit' to end.")
-
-    while True:
-        user_input = input("\nYou: ").strip()
-        if user_input.lower() in ['exit', 'quit']:
-            break
-        
-        print(f"\nSearching through {storage_context.vector_store._collection.count()} embeddings...")
-        
-        response = chat_engine.chat(user_input)
-        
-        source_nodes = []
-        if hasattr(response, 'source_nodes'):
-            source_nodes = response.source_nodes
-            unique_sources = set()
-            filtered_nodes = []
-            for node in source_nodes:
-                source = node.metadata.get('source', '')
-                if source not in unique_sources:
-                    unique_sources.add(source)
-                    filtered_nodes.append(node)
-            
-            source_nodes = filtered_nodes
-            print(f"\nFound {len(source_nodes)} unique source nodes")
-            for i, node in enumerate(source_nodes):
-                print(f"\nSource {i+1}:")
-                print(f"Metadata: {node.metadata}")
-        else:
-            print("\nNo source_nodes attribute found in response")
-            
-        sources = [node.metadata.get('source', 'Unknown source') for node in source_nodes]
-        formatted_response = f"{response.response}\n\nSources:\n" + "\n".join([f"- {source}" for source in sources])
-        print("\nAssistant:", formatted_response)
 
 def process_documents(directory, batch_size):
     """Processes documents in the specified directory."""
@@ -290,4 +241,4 @@ def detect_semantic_sections(text):
 
 if __name__ == "__main__":
     storage_context = setup()
-    chat_session(storage_context)
+    chat_engine = chat_session(storage_context)

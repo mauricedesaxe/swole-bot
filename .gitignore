@@ -9,6 +9,7 @@ chroma_db/*
 *.sqlite3
 *.db
 db/*
+.sesskey
 
 # Poetry
 poetry.lock
