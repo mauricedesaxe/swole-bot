@@ -54,7 +54,8 @@ def post(user_input: str):
     
     sources = []
     if hasattr(response, 'source_nodes'):
-        sources = [node.metadata.get('source', 'Unknown source') for node in response.source_nodes]
+        sources = ['/data/' + os.path.basename(node.metadata.get('source', 'Unknown source')) for node in response.source_nodes]
+        sources = list(dict.fromkeys(sources))  # Remove duplicates while preserving order
     
     return Container(
         # Main response using FastHTML's markdown support
