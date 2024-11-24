@@ -120,7 +120,6 @@ def get_chat_history(session_id: str):
 # Chat endpoint
 @rt("/chat")
 def post(user_input: str, session):
-    # Generate a proper session ID if one doesn't exist
     if 'id' not in session:
         session['id'] = str(uuid.uuid4())
     session_id = session['id']
@@ -131,14 +130,29 @@ def post(user_input: str, session):
 
     storage_context = setup()
     chat_engine = chat_session(storage_context)
-    response = chat_engine.chat(user_input)
+    
+    # Create chat history pairs for LlamaIndex (list of tuples)
+    chat_history = []
+    for i in range(0, len(messages)-1, 2):  # Step by 2 to get pairs, exclude current message
+        if i+1 < len(messages):  # Make sure we have a pair
+            if messages[i]['role'] == 'user' and messages[i+1]['role'] == 'assistant':
+                chat_history.append((
+                    messages[i]['content'],
+                    messages[i+1]['content']
+                ))
+    
+    # Use chat_history with the chat engine
+    response = chat_engine.chat(
+        user_input,
+        chat_history=chat_history
+    )
     
     sources = []
     if hasattr(response, 'source_nodes'):
         sources = ['/data/' + os.path.basename(node.metadata.get('source', 'Unknown source')) for node in response.source_nodes]
         sources = list(dict.fromkeys(sources))  # Remove duplicates while preserving order
 
-    messages.append({'role': 'assistant', 'content': response.response})
+    messages.append({'role': 'assistant', 'content': str(response.response)})
     save_chat_history(session_id, messages)
     
     return Container(
